@@ -1,0 +1,7 @@
+{
+  "folders": {
+    "Images\\Screenshots": [".png"],
+    "Books": [".epub", ".mobi"],
+    "3D Models": [".stl", ".obj", ".fbx", ".blend"]
+  }
+}

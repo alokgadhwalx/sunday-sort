@@ -1,0 +1,5 @@
+# local test runs and personal rule files
+test-*/
+*.local.json
+my-rules.json
+*.csv
