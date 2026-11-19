@@ -22,7 +22,9 @@ param(
     # Don't look for exact duplicate files.
     [switch]$NoDuplicateCheck,
     # Where the undo logs are written.
-    [string]$LogDir = (Join-Path $env:LOCALAPPDATA 'SundaySort\logs')
+    [string]$LogDir = (Join-Path $env:LOCALAPPDATA 'SundaySort\logs'),
+    # Show a Windows notification with a summary (used by the weekly task).
+    [switch]$Notify
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,6 +45,31 @@ function Get-FreeName([string]$dir, [string]$name) {
     $i = 2
     while (Test-Path -LiteralPath (Join-Path $dir "$base ($i)$ext")) { $i++ }
     Join-Path $dir "$base ($i)$ext"
+}
+
+function Format-Size([double]$bytes) {
+    if ($bytes -ge 1GB) { return '{0:N1} GB' -f ($bytes / 1GB) }
+    if ($bytes -ge 1MB) { return '{0:N0} MB' -f ($bytes / 1MB) }
+    '{0:N0} KB' -f [math]::Max(1, $bytes / 1KB)
+}
+
+function Show-Toast([string]$title, [string]$body, [object[]]$buttons) {
+    # Windows notification. Silently does nothing where toasts aren't available.
+    try {
+        $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+        $esc = { param($s) [Security.SecurityElement]::Escape($s) }
+        $actions = ($buttons | ForEach-Object {
+            '<action content="{0}" activationType="protocol" arguments="{1}"/>' -f (& $esc $_.Label), (& $esc $_.Uri)
+        }) -join ''
+        $xml = '<toast><visual><binding template="ToastGeneric"><text>{0}</text><text>{1}</text></binding></visual><actions>{2}</actions></toast>' -f (& $esc $title), (& $esc $body), $actions
+        $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
+        $doc.LoadXml($xml)
+        $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show((New-Object Windows.UI.Notifications.ToastNotification $doc))
+    } catch {
+        Write-Verbose "Notification not shown: $($_.Exception.Message)"
+    }
 }
 
 function Test-SafeSubfolder([string]$name) {
@@ -127,7 +154,7 @@ foreach ($f in $files) {
         try { Move-Item -LiteralPath $f.FullName -Destination $target }
         catch { Write-Warning "Skipped (in use?): $($f.Name)"; continue }
     }
-    $moves.Add([pscustomobject]@{ From = $f.FullName; To = $target; Folder = $sub })
+    $moves.Add([pscustomobject]@{ From = $f.FullName; To = $target; Folder = $sub; Bytes = $f.Length })
 }
 
 # ---------- Report ----------
@@ -144,4 +171,14 @@ if ($DryRun) {
     $logFile = Join-Path $LogDir ('sort-{0:yyyyMMdd-HHmmss}.csv' -f (Get-Date))
     $moves | Export-Csv -LiteralPath $logFile -NoTypeInformation -Encoding UTF8
     Write-Output "Moved $($moves.Count) files. Undo with: .\Undo-LastSort.ps1"
+
+    if ($Notify) {
+        $total = ($moves | Measure-Object Bytes -Sum).Sum
+        $top = $moves | Group-Object { Split-Path $_.Folder -Leaf } | Sort-Object Count -Descending | Select-Object -First 3 |
+            ForEach-Object { '{0} {1}' -f $_.Name, $_.Count }
+        $plural = if ($moves.Count -eq 1) { 'file' } else { 'files' }
+        $buttons = @(@{ Label = 'Open folder'; Uri = ([Uri]$Path).AbsoluteUri })
+        if (Test-Path 'HKCU:\Software\Classes\sundaysort') { $buttons += @{ Label = 'Undo'; Uri = 'sundaysort:undo' } }
+        Show-Toast ('SundaySort tidied {0} {1} ({2})' -f $moves.Count, $plural, (Format-Size $total)) ($top -join '  ·  ') $buttons
+    }
 }

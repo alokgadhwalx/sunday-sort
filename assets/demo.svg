@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 450" width="820" height="450" role="img" aria-label="Animation: a messy Downloads folder is sorted into folders by type by SundaySort">
+  <style>
+    .ui   { font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif; }
+    .mono { font-family: Consolas, "Cascadia Code", Menlo, monospace; }
+    .name { fill: #e6edf3; font-size: 15px; }
+    .dim  { fill: #8b949e; font-size: 13px; }
+    .fold { fill: #e6edf3; font-size: 15px; font-weight: 600; }
+    .badge-t { fill: #0d1117; font-size: 10px; font-weight: 700; text-anchor: middle; }
+
+    .b, .a, .status, .cover, .cursor { animation-duration: 10s; animation-iteration-count: infinite; }
+    .b      { animation-name: bout; }
+    .a      { animation-name: ain; opacity: 0; }
+    .status { animation-name: ain; opacity: 0; animation-delay: 1.3s; }
+    .cover  { animation-name: type; }
+    .cursor { animation-name: blink; animation-duration: 1s; animation-timing-function: steps(1); }
+
+    @keyframes bout {
+      0%, 30%  { opacity: 1; transform: translateX(0); }
+      36%, 95% { opacity: 0; transform: translateX(28px); }
+      100%     { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes ain {
+      0%, 37%  { opacity: 0; transform: translateY(8px); }
+      43%, 89% { opacity: 1; transform: translateY(0); }
+      94%, 100%{ opacity: 0; transform: translateY(0); }
+    }
+    @keyframes type {
+      0%, 6%   { transform: translateX(0); animation-timing-function: steps(20); }
+      26%, 92% { transform: translateX(166px); }
+      96%, 100%{ transform: translateX(0); }
+    }
+    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .b, .a, .status, .cover, .cursor { animation: none; }
+      .b { opacity: 0; } .a, .status { opacity: 1; } .cover { display: none; }
+    }
+  </style>
+
+  <defs>
+    <symbol id="folder" viewBox="0 0 20 16">
+      <path d="M1 3a2 2 0 0 1 2-2h4.5l2 2H17a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2z" fill="#e3b341"/>
+    </symbol>
+  </defs>
+
+  <!-- window -->
+  <rect x="1" y="1" width="818" height="448" rx="12" fill="#0d1117" stroke="#30363d"/>
+  <path d="M1 13a12 12 0 0 1 12-12h794a12 12 0 0 1 12 12v31H1z" fill="#161b22"/>
+  <line x1="1" y1="44" x2="819" y2="44" stroke="#30363d"/>
+  <circle cx="24" cy="22" r="6" fill="#ff5f57"/><circle cx="44" cy="22" r="6" fill="#febc2e"/><circle cx="64" cy="22" r="6" fill="#28c840"/>
+  <use href="#folder" x="350" y="14" width="20" height="16"/>
+  <text x="378" y="27" class="ui" fill="#e6edf3" font-size="14" font-weight="600">Downloads</text>
+
+  <!-- BEFORE: loose files -->
+  <g class="ui">
+    <g class="b" style="animation-delay:0s">   <rect x="40" y="62"  width="34" height="18" rx="4" fill="#f85149"/><text x="57" y="75"  class="badge-t">PDF</text><text x="88" y="76"  class="name">invoice.pdf</text></g>
+    <g class="b" style="animation-delay:.05s"> <rect x="40" y="94"  width="34" height="18" rx="4" fill="#f85149"/><text x="57" y="107" class="badge-t">PDF</text><text x="88" y="108" class="name">invoice (1).pdf</text></g>
+    <g class="b" style="animation-delay:.1s">  <rect x="40" y="126" width="34" height="18" rx="4" fill="#f0883e"/><text x="57" y="139" class="badge-t">PPT</text><text x="88" y="140" class="name">deck.pptx</text></g>
+    <g class="b" style="animation-delay:.15s"> <rect x="40" y="158" width="34" height="18" rx="4" fill="#58a6ff"/><text x="57" y="171" class="badge-t">DOC</text><text x="88" y="172" class="name">report.docx</text></g>
+    <g class="b" style="animation-delay:.2s">  <rect x="40" y="190" width="34" height="18" rx="4" fill="#3fb950"/><text x="57" y="203" class="badge-t">PNG</text><text x="88" y="204" class="name">screenshot.png</text></g>
+    <g class="b" style="animation-delay:.25s"> <rect x="40" y="222" width="34" height="18" rx="4" fill="#bc8cff"/><text x="57" y="235" class="badge-t">MP3</text><text x="88" y="236" class="name">song.mp3</text></g>
+    <g class="b" style="animation-delay:.3s">  <rect x="40" y="254" width="34" height="18" rx="4" fill="#d29922"/><text x="57" y="267" class="badge-t">ZIP</text><text x="88" y="268" class="name">project.zip</text></g>
+    <g class="b" style="animation-delay:.35s"> <rect x="40" y="286" width="34" height="18" rx="4" fill="#8b949e"/><text x="57" y="299" class="badge-t">EXE</text><text x="88" y="300" class="name">setup.exe</text></g>
+    <g class="b" style="animation-delay:.4s">  <rect x="40" y="318" width="34" height="18" rx="4" fill="#f85149"/><text x="57" y="331" class="badge-t">PDF</text><text x="88" y="332" class="name">notes.pdf</text></g>
+    <g class="b" style="animation-delay:0s"><text x="780" y="76" class="dim" text-anchor="end">9 loose files</text></g>
+  </g>
+
+  <!-- AFTER: sorted folders -->
+  <g class="ui">
+    <g class="a" style="animation-delay:0s">   <use href="#folder" x="40"  y="62"  width="20" height="16"/><text x="70"  y="76"  class="fold">Documents</text></g>
+    <g class="a" style="animation-delay:.1s">  <use href="#folder" x="72"  y="94"  width="20" height="16"/><text x="102" y="108" class="fold">PDFs</text><text x="300" y="108" class="dim">invoice.pdf, notes.pdf</text></g>
+    <g class="a" style="animation-delay:.2s">  <use href="#folder" x="72"  y="126" width="20" height="16"/><text x="102" y="140" class="fold">Slides</text><text x="300" y="140" class="dim">deck.pptx</text></g>
+    <g class="a" style="animation-delay:.3s">  <use href="#folder" x="72"  y="158" width="20" height="16"/><text x="102" y="172" class="fold">Word</text><text x="300" y="172" class="dim">report.docx</text></g>
+    <g class="a" style="animation-delay:.4s">  <use href="#folder" x="40"  y="190" width="20" height="16"/><text x="70"  y="204" class="fold">Images</text><text x="300" y="204" class="dim">screenshot.png</text></g>
+    <g class="a" style="animation-delay:.5s">  <use href="#folder" x="40"  y="222" width="20" height="16"/><text x="70"  y="236" class="fold">Audio</text><text x="300" y="236" class="dim">song.mp3</text></g>
+    <g class="a" style="animation-delay:.6s">  <use href="#folder" x="40"  y="254" width="20" height="16"/><text x="70"  y="268" class="fold">Archives</text><text x="300" y="268" class="dim">project.zip</text></g>
+    <g class="a" style="animation-delay:.7s">  <use href="#folder" x="40"  y="286" width="20" height="16"/><text x="70"  y="300" class="fold">Installers</text><text x="300" y="300" class="dim">setup.exe</text></g>
+    <g class="a" style="animation-delay:.8s">  <use href="#folder" x="40"  y="318" width="20" height="16"/><text x="70"  y="332" class="fold">_Duplicates (check, then delete)</text><text x="352" y="332" class="dim">invoice (1).pdf</text></g>
+    <g class="a" style="animation-delay:0s"><text x="780" y="76" class="dim" text-anchor="end">0 loose files</text></g>
+  </g>
+
+  <!-- terminal -->
+  <rect x="20" y="360" width="780" height="72" rx="8" fill="#010409" stroke="#30363d"/>
+  <g class="mono" font-size="15">
+    <text x="40" y="388" fill="#3fb950">PS&gt;</text>
+    <text x="80" y="388" fill="#e6edf3">.\Sort-Downloads.ps1</text>
+    <g class="cover">
+      <rect x="78" y="372" width="300" height="22" fill="#010409"/>
+      <rect class="cursor" x="80" y="374" width="9" height="18" fill="#8b949e"/>
+    </g>
+    <text class="status" x="40" y="416" fill="#8b949e">✔ Sorted 9 files · 1 duplicate set aside · nothing deleted · undo anytime</text>
+  </g>
+</svg>

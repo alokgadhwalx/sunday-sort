@@ -18,6 +18,12 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Write-Output "No scheduled task named '$TaskName'."
 }
 
+$key = 'HKCU:\Software\Classes\sundaysort'
+if (Test-Path $key) {
+    $cmd = (Get-Item "$key\shell\open\command" -ErrorAction SilentlyContinue).GetValue('')
+    if ($cmd -and $cmd -like "*$InstallDir*") { Remove-Item -Path $key -Recurse; Write-Output 'Removed the sundaysort: link used by the Undo button.' }
+}
+
 foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'rules.json', 'Uninstall.ps1') {
     $p = Join-Path $InstallDir $f
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p }

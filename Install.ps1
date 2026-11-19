@@ -17,6 +17,8 @@ param(
     [string]$RulesFile,
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'SundaySort'),
     [string]$TaskName = 'SundaySort - weekly Downloads cleanup',
+    # Don't show a notification after each weekly run.
+    [switch]$NoNotify,
     [switch]$SkipPreview
 )
 $ErrorActionPreference = 'Stop'
@@ -48,7 +50,18 @@ if (-not $SkipPreview) {
     & $sorter @previewArgs
 }
 
-# 3) Schedule it
+# 3) Notifications: the "Undo" button opens sundaysort:undo, registered for this user only
+if (-not $NoNotify) {
+    $sortArgs += ' -Notify'
+    $undo = Join-Path $InstallDir 'Undo-LastSort.ps1'
+    $key = 'HKCU:\Software\Classes\sundaysort'
+    New-Item -Path "$key\shell\open\command" -Force | Out-Null
+    Set-Item -Path $key -Value 'URL:SundaySort'
+    New-ItemProperty -Path $key -Name 'URL Protocol' -Value '' -Force | Out-Null
+    Set-Item -Path "$key\shell\open\command" -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$undo`" -Notify"
+}
+
+# 4) Schedule it
 $action    = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sorter`"$sortArgs"
 $trigger   = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $Day -At $at
 $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 30)

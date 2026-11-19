@@ -1,21 +1,17 @@
 # SundaySort
 
+[![tests](https://github.com/alokgadhwalx/sunday-sort/actions/workflows/tests.yml/badge.svg)](https://github.com/alokgadhwalx/sunday-sort/actions/workflows/tests.yml)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
+![PowerShell 5.1 | 7](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE)
+[![MIT license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **Your Downloads folder, tidied automatically once a week.**
 
 SundaySort is a small PowerShell tool for Windows. Every week it takes the loose files in your Downloads folder and sorts them into folders by type: PDFs, images, installers, archives and so on. It **never deletes anything**, and every run can be undone.
 
-```
-Downloads\                          Downloads\
-├── invoice (1).pdf                 ├── Documents\
-├── invoice.pdf                     │   ├── PDFs\        invoice.pdf, notes.pdf
-├── notes.pdf                       │   ├── Slides\      deck.pptx
-├── deck.pptx             ──────▶   │   └── Word\        report.docx
-├── report.docx                     ├── Images\          screenshot.png
-├── screenshot.png                  ├── Installers\      setup.exe
-├── setup.exe                       ├── Archives\        project.zip
-└── project.zip                     └── _Duplicates (check, then delete)\
-                                        └── invoice (1).pdf
-```
+<p align="center">
+  <img src="assets/demo.svg" alt="A messy Downloads folder being sorted into folders by type" width="760">
+</p>
 
 ## Features
 
@@ -23,6 +19,7 @@ Downloads\                          Downloads\
 - **Runs on its own every week.** If your PC was off at that time, it runs the next time you turn it on.
 - **Never deletes.** Exact duplicates (same contents, checked with SHA-256) go into a `_Duplicates` folder for you to review.
 - **Undo with one command.** Every run is logged.
+- **Tells you what it did.** After each weekly run, a Windows notification says something like *"SundaySort tidied 23 files (1.2 GB)"*, with **Open folder** and **Undo** buttons.
 - **Leaves downloads in progress alone.** `.crdownload` and `.part` files, and anything changed in the last 10 minutes, are skipped.
 - **Never overwrites files.** If a name is taken, the new file gets ` (2)` added to its name.
 - **Custom rules.** Use a small JSON file to add or rename folders.
@@ -45,6 +42,8 @@ To use a different day or time:
 powershell -ExecutionPolicy Bypass -File .\Install.ps1 -Day Friday -Time "6:30 PM"
 ```
 
+Prefer no notifications? Add `-NoNotify`.
+
 ## Use it without installing
 
 ```powershell
@@ -60,6 +59,7 @@ powershell -ExecutionPolicy Bypass -File .\Install.ps1 -Day Friday -Time "6:30 P
 | `-MinAgeMinutes 10` | Skips files changed more recently than this |
 | `-RulesFile <file>` | Uses custom folder rules (see below) |
 | `-NoDuplicateCheck` | Doesn't look for duplicate files |
+| `-Notify` | Shows a notification with a summary when done |
 
 ## Custom rules
 
@@ -85,7 +85,7 @@ powershell -ExecutionPolicy Bypass -File .\Install.ps1 -RulesFile .\my-rules.jso
 & "$env:LOCALAPPDATA\SundaySort\Uninstall.ps1"
 ```
 
-This removes the weekly task and the installed scripts. Your sorted files stay where they are.
+This removes the weekly task, the installed scripts and the `sundaysort:` link used by the notification's Undo button. Your sorted files stay where they are.
 
 ## Where things live
 
@@ -94,6 +94,15 @@ This removes the weekly task and the installed scripts. Your sorted files stay w
 | Installed scripts | `%LOCALAPPDATA%\SundaySort\` |
 | Undo logs | `%LOCALAPPDATA%\SundaySort\logs\` |
 | Weekly task | Task Scheduler → `SundaySort - weekly Downloads cleanup` |
+| Undo button link | `HKEY_CURRENT_USER\Software\Classes\sundaysort` (your user only, no admin) |
+
+## Tests
+
+```powershell
+.\tests\Run-Tests.ps1
+```
+
+The tests run in throwaway temporary folders and cover sorting, dry runs, duplicates, skipped files, name clashes, undo and custom rules. GitHub runs them on every push, on both Windows PowerShell 5.1 and PowerShell 7.
 
 ## FAQ
 
