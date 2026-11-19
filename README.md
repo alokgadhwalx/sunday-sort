@@ -19,7 +19,7 @@ SundaySort is a small PowerShell tool for Windows. Every week it takes the loose
 - **Or by where a file came from.** Windows records the website each download came from. SundaySort can use that to put files into `From WhatsApp`, `From Gmail`, `From Google Drive` and so on, or into your own folders, such as anything from your bank's site going to `Finance`. This works even when the file name is useless, like `1000221658.pdf`.
 - **Rules based on file names.** For example, `*invoice*` goes to `Finance` and `Screenshot*` goes to `Images\Screenshots`.
 - **Right-click any folder → "Tidy with SundaySort"**, not just Downloads. On Windows 11 it's under *Show more options*.
-- **Runs on its own every week.** If your PC was off at that time, it runs the next time you turn it on.
+- **Runs on its own every week, or live.** The weekly run catches up the next time you turn your PC on if it was off. In **live mode** (`-Live`), new downloads are sorted about 2 minutes after they finish, so you have time to open them first.
 - **Never deletes.** Exact duplicates (same contents, checked with SHA-256) go into a `_Duplicates` folder for you to review.
 - **Undo with one command.** Every run is logged.
 - **Finds space you can free.** Each week it checks for installers of apps that are already installed (same or older version), zip files whose contents are already unzipped, and duplicates anywhere in Downloads. You get a report to review, and nothing is deleted until you say so.
@@ -50,11 +50,28 @@ You can add any of these options:
 
 | Option | What it does |
 |---|---|
+| `-Live` | Also sort new downloads as they arrive (see [Live mode](#live-mode)) |
 | `-BySource` | Also sort by website: `From WhatsApp`, `From Gmail`, `From Google Drive`, `From Discord`… |
 | `-RulesFile .\my-rules.json` | Use your own rules (see [Custom rules](#custom-rules)) |
 | `-NoNotify` | No notification after the weekly run |
 | `-NoCleanupReport` | Don't look for space you could free |
 | `-NoContextMenu` | Don't add "Tidy with SundaySort" to the right-click menu |
+
+## Live mode
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Install.ps1 -Live
+```
+
+A small watcher starts when you log in and sorts each new download shortly after it finishes:
+
+- **Files that are still downloading are never touched**: `.crdownload`, `.part` and the like.
+- **A file is moved only after it has stopped changing for 2 minutes**, so you can open it from your browser first. Change this with `-SettleSeconds 60`.
+- **Files that are open in another app are skipped** and tried again later.
+- **It uses almost no resources.** Windows tells it when the folder changes, so it isn't constantly scanning.
+- **Every live sort is logged and can be undone**, just like the weekly run. Notifications replace each other instead of piling up.
+
+The weekly run still happens, and it's what sends the cleanup report. Uninstalling stops and removes live mode.
 
 ## Sort by where a file came from
 
@@ -146,6 +163,7 @@ This removes the weekly task, the installed scripts, the right-click menu entry 
 | Undo logs | `%LOCALAPPDATA%\SundaySort\logs\` |
 | Cleanup reports | `%LOCALAPPDATA%\SundaySort\reports\` |
 | Weekly task | Task Scheduler → `SundaySort - weekly Downloads cleanup` |
+| Live mode | Task Scheduler → `SundaySort - live Downloads sorting` (starts when you log in) |
 | Undo button link | `HKEY_CURRENT_USER\Software\Classes\sundaysort` (your user only, no admin) |
 | Right-click menu | `HKEY_CURRENT_USER\Software\Classes\Directory\shell\SundaySort` and `…\Directory\Background\shell\SundaySort` |
 | Running total | `%LOCALAPPDATA%\SundaySort\logs\stats.json` |

@@ -7,6 +7,7 @@
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'SundaySort'),
     [string]$TaskName = 'SundaySort - weekly Downloads cleanup',
+    [string]$LiveTaskName = 'SundaySort - live Downloads sorting',
     [switch]$RemoveLogs
 )
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,12 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Write-Output "Removed scheduled task: $TaskName"
 } else {
     Write-Output "No scheduled task named '$TaskName'."
+}
+
+if (Get-ScheduledTask -TaskName $LiveTaskName -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $LiveTaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $LiveTaskName -Confirm:$false
+    Write-Output "Stopped and removed live mode: $LiveTaskName"
 }
 
 $key = 'HKCU:\Software\Classes\sundaysort'
@@ -32,7 +39,7 @@ foreach ($base in 'HKCU:\Software\Classes\Directory\shell\SundaySort', 'HKCU:\So
 }
 if ($removedMenu) { Write-Output 'Removed "Tidy with SundaySort" from the right-click menu.' }
 
-foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'rules.json', 'Uninstall.ps1') {
+foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'Watch-Downloads.ps1', 'rules.json', 'Uninstall.ps1') {
     $p = Join-Path $InstallDir $f
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p }
 }

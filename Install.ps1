@@ -6,6 +6,7 @@
     .\Install.ps1 -Day Friday -Time "6:30 PM"
     .\Install.ps1 -Path "D:\Downloads" -RulesFile .\my-rules.json
     .\Install.ps1 -BySource                         # also sort by site: From WhatsApp, From Gmail...
+    .\Install.ps1 -Live                             # sort new downloads as they arrive, not just weekly
 #>
 [CmdletBinding()]
 param(
@@ -26,6 +27,12 @@ param(
     [switch]$BySource,
     # Don't add "Tidy with SundaySort" to the right-click menu of folders.
     [switch]$NoContextMenu,
+    # Live mode: sort new downloads shortly after they finish, instead of waiting for the weekly run.
+    # The weekly run still happens and sends the cleanup report.
+    [switch]$Live,
+    # Live mode: how long a new file must stay unchanged before it's sorted (seconds).
+    [int]$SettleSeconds = 120,
+    [string]$LiveTaskName = 'SundaySort - live Downloads sorting',
     [switch]$SkipPreview
 )
 $ErrorActionPreference = 'Stop'
@@ -34,7 +41,7 @@ $at = [datetime]::Parse($Time)
 
 # 1) Copy the scripts
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'Uninstall.ps1') {
+foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'Watch-Downloads.ps1', 'Uninstall.ps1') {
     Copy-Item -LiteralPath (Join-Path $here $f) -Destination $InstallDir -Force
 }
 Get-ChildItem -LiteralPath $InstallDir -Filter '*.ps1' | Unblock-File
@@ -93,10 +100,26 @@ $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIden
 Register-ScheduledTask -TaskName $TaskName -Description 'Sorts loose files in Downloads into folders by type. Never deletes anything.' `
     -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
 
+# 6) Live mode: a watcher that starts when you log in and keeps running in the background
+if ($Live) {
+    $watcherScript = Join-Path $InstallDir 'Watch-Downloads.ps1'
+    $watchArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watcherScript`" -SettleSeconds $SettleSeconds$ruleArgs"
+    if ($Path) { $watchArgs += " -Path `"$((Resolve-Path -LiteralPath $Path).ProviderPath)`"" }
+    if (-not $NoNotify) { $watchArgs += ' -Notify' }
+    $liveAction   = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $watchArgs
+    $liveTrigger  = New-ScheduledTaskTrigger -AtLogOn -User ([Security.Principal.WindowsIdentity]::GetCurrent().Name)
+    $liveSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) `
+                        -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $LiveTaskName -Description 'Sorts new downloads shortly after they finish. Never deletes anything.' `
+        -Action $liveAction -Trigger $liveTrigger -Settings $liveSettings -Principal $principal -Force | Out-Null
+    Start-ScheduledTask -TaskName $LiveTaskName
+}
+
 $next = (Get-ScheduledTask -TaskName $TaskName | Get-ScheduledTaskInfo).NextRunTime
 Write-Output ""
 Write-Output "Installed to $InstallDir"
 Write-Output "Scheduled every $Day at $($at.ToString('h:mm tt')). Next run: $next"
+if ($Live) { Write-Output "Live mode is on: new downloads are sorted $SettleSeconds seconds after they finish. Starts automatically when you log in." }
 Write-Output "Sort now:  & `"$sorter`""
 Write-Output "Undo:      & `"$(Join-Path $InstallDir 'Undo-LastSort.ps1')`""
 Write-Output "Cleanup:   & `"$(Join-Path $InstallDir 'Find-Reclaimable.ps1')`""

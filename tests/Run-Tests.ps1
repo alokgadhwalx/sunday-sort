@@ -255,6 +255,48 @@ Test 'running total adds up across runs' {
     Assert ($stats.Files -eq 3) "expected 3 files in the running total, got $($stats.Files)"
 }
 
+Test 'live: sorts a new download once it settles, and waits for unfinished ones' {
+    param($r)
+    $watcher = Join-Path $repo 'Watch-Downloads.ps1'
+    $job = Start-Job -ScriptBlock {
+        param($w, $p, $l)
+        & $w -Path $p -LogDir $l -TestSettleSeconds 2 -MaxRunSeconds 25
+    } -ArgumentList $watcher, $r, "$r\_logs"
+    try {
+        Start-Sleep -Seconds 3
+        Set-Content "$r\report.pdf" 'finished download'
+        Set-Content "$r\movie.mp4.crdownload" 'still downloading'
+        # the finished file should be sorted; the unfinished one must not be touched
+        $deadline = (Get-Date).AddSeconds(12)
+        while (-not (Test-Path "$r\Documents\PDFs\report.pdf") -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+        Assert (Test-Path "$r\Documents\PDFs\report.pdf") 'finished download was not sorted live'
+        Assert (Test-Path "$r\movie.mp4.crdownload") 'unfinished download was touched'
+        # browser finishes the download: the file is renamed
+        Rename-Item "$r\movie.mp4.crdownload" 'movie.mp4'
+        (Get-Item "$r\movie.mp4").LastWriteTime = Get-Date
+        $deadline = (Get-Date).AddSeconds(12)
+        while (-not (Test-Path "$r\Videos\movie.mp4") -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+        Assert (Test-Path "$r\Videos\movie.mp4") 'download was not sorted after it finished'
+        $logs = @(Get-ChildItem "$r\_logs" -Filter 'sort-*.csv')
+        Assert ($logs.Count -ge 1) 'live sorts were not logged for undo'
+    } finally {
+        Stop-Job $job -ErrorAction SilentlyContinue; Remove-Job $job -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test 'live: only one watcher runs per folder' {
+    param($r)
+    $watcher = Join-Path $repo 'Watch-Downloads.ps1'
+    $job = Start-Job -ScriptBlock { param($w, $p, $l) & $w -Path $p -LogDir $l -TestSettleSeconds 2 -MaxRunSeconds 12 } -ArgumentList $watcher, $r, "$r\_logs"
+    try {
+        Start-Sleep -Seconds 4
+        $out = & $watcher -Path $r -LogDir "$r\_logs" -TestSettleSeconds 2 -MaxRunSeconds 3
+        Assert ("$out" -match 'Already watching') 'a second watcher started on the same folder'
+    } finally {
+        Stop-Job $job -ErrorAction SilentlyContinue; Remove-Job $job -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Test 'cleanup: also checks "From ..." folders' {
     param($r)
     New-OldFile "$r\From WhatsApp\photo.jpg" 'same photo'

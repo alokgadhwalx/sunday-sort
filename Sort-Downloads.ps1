@@ -17,7 +17,7 @@ param(
     # Show what would happen without moving anything.
     [switch]$DryRun,
     # Leave files alone that changed in the last N minutes (downloads still in progress).
-    [int]$MinAgeMinutes = 10,
+    [double]$MinAgeMinutes = 10,
     # Optional JSON file with your own rules: by extension, by file name, or by the website a file came from.
     # See examples\rules.example.json.
     [string]$RulesFile,
@@ -76,7 +76,10 @@ function Show-Toast([string]$title, [string]$body, [object[]]$buttons, [string]$
         $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
         $doc.LoadXml($xml)
         $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
-        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show((New-Object Windows.UI.Notifications.ToastNotification $doc))
+        $toast = New-Object Windows.UI.Notifications.ToastNotification $doc
+        # Same tag every time: a new SundaySort notification replaces the previous one instead of piling up.
+        $toast.Tag = 'sort'; $toast.Group = 'SundaySort'
+        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
     } catch {
         Write-Verbose "Notification not shown: $($_.Exception.Message)"
     }
