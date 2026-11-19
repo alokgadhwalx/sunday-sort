@@ -1,11 +1,15 @@
 <#
 .SYNOPSIS
-    Removes the weekly task and the installed scripts. Your files and folders are not touched.
+    Removes the scheduled tasks, the right-click menu entry and the installed scripts.
+    Your files and folders are not touched.
     Undo logs and cleanup reports are kept unless you pass -RemoveLogs.
 #>
 [CmdletBinding()]
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'SundaySort'),
+    # The folder SundaySort is installed in. Defaults to the folder this script is in.
+    [string]$InstallDir = $PSScriptRoot,
+    # Where undo logs and cleanup reports are kept.
+    [string]$DataDir = (Join-Path $env:LOCALAPPDATA 'SundaySort'),
     [string]$TaskName = 'SundaySort - weekly Downloads cleanup',
     [string]$LiveTaskName = 'SundaySort - live Downloads sorting',
     [switch]$RemoveLogs
@@ -44,10 +48,13 @@ foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1'
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p }
 }
 if ($RemoveLogs) {
-    foreach ($d in 'logs', 'reports') {
-        $p = Join-Path $InstallDir $d
-        if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse }
+    foreach ($base in @($DataDir, $InstallDir) | Select-Object -Unique) {
+        foreach ($d in 'logs', 'reports') {
+            $p = Join-Path $base $d
+            if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse; Write-Output "Removed $p" }
+        }
     }
+    if ((Test-Path -LiteralPath $DataDir) -and -not (Get-ChildItem -LiteralPath $DataDir -Force)) { Remove-Item -LiteralPath $DataDir }
 }
 if ((Test-Path -LiteralPath $InstallDir) -and -not (Get-ChildItem -LiteralPath $InstallDir -Force)) { Remove-Item -LiteralPath $InstallDir }
 Write-Output "SundaySort removed. Your sorted files stay where they are."

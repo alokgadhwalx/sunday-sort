@@ -40,6 +40,8 @@ powershell -ExecutionPolicy Bypass -File .\Install.ps1
 
 The installer first shows a **preview** of what it would do. Then it schedules a weekly run for **Sunday at 9 PM**. No admin rights are needed.
 
+It also checks that Windows actually lets scheduled tasks run scripts from the install folder. On some PCs Windows blocks this for certain folders, and the weekly run and live mode would then silently do nothing. If the first choice is blocked, the installer picks another folder automatically and tells you where it installed.
+
 To use a different day or time:
 
 ```powershell
@@ -150,8 +152,10 @@ powershell -ExecutionPolicy Bypass -File .\Install.ps1 -RulesFile .\my-rules.jso
 ## Uninstall
 
 ```powershell
-& "$env:LOCALAPPDATA\SundaySort\Uninstall.ps1"
+& "$env:LOCALAPPDATA\Programs\SundaySort\Uninstall.ps1"
 ```
+
+(If the installer told you it used another folder, run `Uninstall.ps1` from there. Add `-RemoveLogs` to also delete undo logs and reports.)
 
 This removes the weekly task, the installed scripts, the right-click menu entry and the `sundaysort:` link used by the notification's Undo button. Your sorted files stay where they are.
 
@@ -159,7 +163,7 @@ This removes the weekly task, the installed scripts, the right-click menu entry 
 
 | What | Where |
 |---|---|
-| Installed scripts | `%LOCALAPPDATA%\SundaySort\` |
+| Installed scripts | `%LOCALAPPDATA%\Programs\SundaySort\`, or `%USERPROFILE%\.sundaysort\` if Windows blocks the first |
 | Undo logs | `%LOCALAPPDATA%\SundaySort\logs\` |
 | Cleanup reports | `%LOCALAPPDATA%\SundaySort\reports\` |
 | Weekly task | Task Scheduler → `SundaySort - weekly Downloads cleanup` |
