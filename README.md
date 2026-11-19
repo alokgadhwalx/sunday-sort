@@ -13,6 +13,21 @@ SundaySort is a small PowerShell tool for Windows. Every week it takes the loose
   <img src="assets/demo.svg" alt="A messy Downloads folder being sorted into folders by type" width="760">
 </p>
 
+## The app
+
+After installing, open **SundaySort** from the Start menu. It has four screens and a tray icon:
+
+| Screen | What you can do |
+|---|---|
+| **Dashboard** | See files waiting to sort, your running total, how much space you could free, whether live sorting is on, and a chart of **where your downloads come from** (WhatsApp, Gmail, ChatGPT…). **Sort now** with one click. |
+| **Clean up** | Review old installers, unzipped archives and duplicates, with the reason for each. Tick the ones to remove, and they go to the Recycle Bin. |
+| **History** | Every sort, showing which files moved, where to, and why. **Undo** any sort with one click. |
+| **Settings** | Switch live sorting, sorting by website, and the Sunday check-up on or off. Edit your rules. Uninstall. |
+
+Closing the window keeps it in the tray. Live sorting runs in the background whether the app is open or not.
+
+The app is a small native Windows program (about 120 KB). The installer **builds it on your own PC** with the C# compiler that comes with Windows, so there's no downloaded `.exe` to trust and no "unknown app" warning. You can build it yourself with `.\app\Build-App.ps1`. Use `-NoApp` to install only the background sorting.
+
 ## Features
 
 - **Sorts by file type** into 16 folders (Documents, Images, Videos, Audio, Archives, Installers, Code, Design, Fonts and more)
@@ -58,6 +73,7 @@ You can add any of these options:
 | `-NoNotify` | No notification after the weekly run |
 | `-NoCleanupReport` | Don't look for space you could free |
 | `-NoContextMenu` | Don't add "Tidy with SundaySort" to the right-click menu |
+| `-NoApp` | Don't build the app; install only the background sorting |
 
 ## Live mode
 
@@ -65,7 +81,7 @@ You can add any of these options:
 powershell -ExecutionPolicy Bypass -File .\Install.ps1 -Live
 ```
 
-A small watcher starts when you log in and sorts each new download shortly after it finishes:
+A small watcher starts when you log in, and is restarted within 15 minutes if it's ever closed. It sorts each new download shortly after it finishes:
 
 - **Files that are still downloading are never touched**: `.crdownload`, `.part` and the like.
 - **A file is moved only after it has stopped changing for 2 minutes**, so you can open it from your browser first. Change this with `-SettleSeconds 60`.
@@ -157,13 +173,14 @@ powershell -ExecutionPolicy Bypass -File .\Install.ps1 -RulesFile .\my-rules.jso
 
 (If the installer told you it used another folder, run `Uninstall.ps1` from there. Add `-RemoveLogs` to also delete undo logs and reports.)
 
-This removes the weekly task, the installed scripts, the right-click menu entry and the `sundaysort:` link used by the notification's Undo button. Your sorted files stay where they are.
+This removes the app and its Start menu entry, the background tasks, the installed scripts, the right-click menu entry and the `sundaysort:` link used by the notification's Undo button. Your sorted files stay where they are. You can also uninstall from the app: **Settings → Uninstall SundaySort**.
 
 ## Where things live
 
 | What | Where |
 |---|---|
-| Installed scripts | `%LOCALAPPDATA%\Programs\SundaySort\`, or `%USERPROFILE%\.sundaysort\` if Windows blocks the first |
+| App and scripts | `%LOCALAPPDATA%\Programs\SundaySort\`, or `%USERPROFILE%\.sundaysort\` if Windows blocks the first |
+| Start menu | `SundaySort` |
 | Undo logs | `%LOCALAPPDATA%\SundaySort\logs\` |
 | Cleanup reports | `%LOCALAPPDATA%\SundaySort\reports\` |
 | Weekly task | Task Scheduler → `SundaySort - weekly Downloads cleanup` |

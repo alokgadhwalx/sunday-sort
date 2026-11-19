@@ -326,6 +326,17 @@ Test 'cleanup: never looks inside your own folders unless asked' {
     Assert ($all.Count -eq 1) '-IncludeAllFolders did not find the duplicate'
 }
 
+Test 'cleanup: -RulesFile adds your own folders to the scan' {
+    param($r)
+    $rules = "$r\_logs\rules.json"
+    '{ "folders": { "Code & Web": [".html"] }, "names": { "Finance\\Bills": ["*bill*"] } }' | Set-Content $rules
+    New-OldFile "$r\Code & Web\page.html" 'same page'
+    New-OldFile "$r\Finance\Bills\page-copy.html" 'same page'
+    Assert (@(Find-Items $r).Count -eq 0) 'rule folders scanned without the rules file'
+    $items = @(& $finder -Path $r -NoReport -PassThru -RulesFile $rules -InstalledPrograms $noApps | Where-Object { $_.PSObject.Properties['Category'] })
+    Assert ($items.Count -eq 1) "expected 1 duplicate with the rules file, got $($items.Count)"
+}
+
 Test 'cleanup: flags a zip only when every file in it is already unzipped' {
     param($r)
     New-OldFile "$r\project\a.txt" 'a'; New-OldFile "$r\project\sub\b.txt" 'b'

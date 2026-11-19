@@ -1,3 +1,6 @@
+# built app (compiled on each PC by Install.ps1 / app\Build-App.ps1)
+app/bin/
+
 # local test runs and personal rule files
 test-*/
 *.local.json

@@ -35,6 +35,8 @@ param(
     # Live mode: how long a new file must stay unchanged before it's sorted (seconds).
     [int]$SettleSeconds = 120,
     [string]$LiveTaskName = 'SundaySort - live Downloads sorting',
+    # Don't build the SundaySort app (window + tray icon); install only the background sorting.
+    [switch]$NoApp,
     [switch]$SkipPreview
 )
 $ErrorActionPreference = 'Stop'
@@ -146,7 +148,12 @@ if ($Live) {
     if ($Path) { $watchArgs += " -Path `"$((Resolve-Path -LiteralPath $Path).ProviderPath)`"" }
     if (-not $NoNotify) { $watchArgs += ' -Notify' }
     $liveAction   = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $watchArgs
-    $liveTrigger  = New-ScheduledTaskTrigger -AtLogOn -User ([Security.Principal.WindowsIdentity]::GetCurrent().Name)
+    # Start at log-on, and check every 15 minutes: if the watcher was closed for any reason it starts
+    # again (if it's already running, Windows ignores the extra start because of IgnoreNew below).
+    $liveTrigger  = @(
+        (New-ScheduledTaskTrigger -AtLogOn -User ([Security.Principal.WindowsIdentity]::GetCurrent().Name)),
+        (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15))
+    )
     $liveSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) `
                         -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName $LiveTaskName -Description 'Sorts new downloads shortly after they finish. Never deletes anything.' `
@@ -157,6 +164,25 @@ if ($Live) {
         Write-Warning "Live mode was set up but didn't stay running. Check Task Scheduler -> '$LiveTaskName' -> Last Run Result."
     }
 }
+
+# 7) The app: compiled right here with the C# compiler built into Windows, so there's no downloaded
+#    .exe (and no "unknown app" warning). Adds SundaySort to the Start menu.
+$appExe = Join-Path $InstallDir 'SundaySort.exe'
+if (-not $NoApp) {
+    try {
+        Get-Process SundaySort -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $appExe } | Stop-Process -Force
+        & (Join-Path $here 'app\Build-App.ps1') -OutDir $InstallDir | Out-Null
+        $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'SundaySort.lnk'
+        $sh = New-Object -ComObject WScript.Shell
+        $sc = $sh.CreateShortcut($lnk)
+        $sc.TargetPath = $appExe; $sc.WorkingDirectory = $InstallDir
+        $sc.Description = 'Keeps your Downloads folder tidy'; $sc.IconLocation = "$appExe,0"
+        $sc.Save()
+    } catch {
+        Write-Warning "The SundaySort app couldn't be built ($($_.Exception.Message)). Background sorting is installed and works without it."
+        $appExe = $null
+    }
+} else { $appExe = $null }
 
 $next = (Get-ScheduledTask -TaskName $TaskName | Get-ScheduledTaskInfo).NextRunTime
 Write-Output ""
@@ -169,3 +195,8 @@ Write-Output "Cleanup:   & `"$(Join-Path $InstallDir 'Find-Reclaimable.ps1')`""
 if (-not $NoContextMenu) { Write-Output 'Right-click any folder -> "Tidy with SundaySort" (Windows 11: under "Show more options")' }
 Write-Output "Remove:    & `"$(Join-Path $InstallDir 'Uninstall.ps1')`""
 Write-Output "Logs and reports: $(Join-Path $env:LOCALAPPDATA 'SundaySort')"
+if ($appExe -and (Test-Path -LiteralPath $appExe)) {
+    Write-Output ""
+    Write-Output "The SundaySort app is in your Start menu. Opening it now..."
+    Start-Process -FilePath $appExe
+}

@@ -30,6 +30,8 @@ param(
     [switch]$IncludeAllFolders,
     # More top-level folders that SundaySort sorts into (from your rules). Folders named "From ..." are always included.
     [string[]]$ExtraFolders,
+    # Your rules file: the folders it sends files to are scanned too.
+    [string]$RulesFile,
     # For testing: use this list (objects with Name and Version) instead of the installed-programs list in the registry.
     [object[]]$InstalledPrograms
 )
@@ -51,6 +53,14 @@ function Format-Size([double]$bytes) {
 }
 
 function Get-Plural([int]$n, [string]$one, [string]$many) { if ($n -eq 1) { "1 $one" } else { "$n $many" } }
+
+if ($RulesFile) {
+    $custom = Get-Content -LiteralPath $RulesFile -Raw | ConvertFrom-Json
+    $fromRules = foreach ($section in @($custom.names, $custom.sources, $custom.folders)) {
+        if ($section) { $section.PSObject.Properties | ForEach-Object { ($_.Name -split '\\')[0] } }
+    }
+    $ExtraFolders = @($ExtraFolders) + @($fromRules) | Where-Object { $_ } | Select-Object -Unique
+}
 
 if (-not $Path) { $Path = Get-DownloadsFolder }
 if (-not (Test-Path -LiteralPath $Path -PathType Container)) { throw "Folder not found: $Path" }

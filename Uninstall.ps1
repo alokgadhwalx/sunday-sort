@@ -7,7 +7,7 @@
 [CmdletBinding()]
 param(
     # The folder SundaySort is installed in. Defaults to the folder this script is in.
-    [string]$InstallDir = $PSScriptRoot,
+    [string]$InstallDir,
     # Where undo logs and cleanup reports are kept.
     [string]$DataDir = (Join-Path $env:LOCALAPPDATA 'SundaySort'),
     [string]$TaskName = 'SundaySort - weekly Downloads cleanup',
@@ -15,6 +15,8 @@ param(
     [switch]$RemoveLogs
 )
 $ErrorActionPreference = 'Stop'
+# (Set here, not as the parameter default: $PSScriptRoot is empty in parameter defaults under "powershell -File".)
+if (-not $InstallDir) { $InstallDir = $PSScriptRoot }
 
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
@@ -43,7 +45,17 @@ foreach ($base in 'HKCU:\Software\Classes\Directory\shell\SundaySort', 'HKCU:\So
 }
 if ($removedMenu) { Write-Output 'Removed "Tidy with SundaySort" from the right-click menu.' }
 
-foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'Watch-Downloads.ps1', 'rules.json', 'Uninstall.ps1') {
+# The app: close it, remove it and its Start menu entry
+$appExe = Join-Path $InstallDir 'SundaySort.exe'
+Get-Process SundaySort -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $appExe } | Stop-Process -Force -ErrorAction SilentlyContinue
+$lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'SundaySort.lnk'
+if (Test-Path -LiteralPath $lnk) {
+    $target = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
+    if ($target -eq $appExe) { Remove-Item -LiteralPath $lnk; Write-Output 'Removed SundaySort from the Start menu.' }
+}
+Start-Sleep -Milliseconds 500
+
+foreach ($f in 'SundaySort.exe', 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'Watch-Downloads.ps1', 'rules.json', 'Uninstall.ps1') {
     $p = Join-Path $InstallDir $f
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p }
 }

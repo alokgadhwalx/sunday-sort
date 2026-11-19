@@ -19,3 +19,9 @@ jobs:
         run: |
           ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./tests/Run-Tests.ps1
           exit $LASTEXITCODE
+      - name: Build the app
+        if: matrix.shell == 'powershell'
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./app/Build-App.ps1
+          exit $LASTEXITCODE
