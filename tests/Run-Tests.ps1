@@ -33,6 +33,15 @@ function New-OldFile([string]$path, [string]$content = 'x') {
     (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddDays(-2)
 }
 
+# Marks a file as downloaded from a website, the same way browsers do (the "Mark of the Web").
+function Set-Source([string]$path, [string]$referrer, [string]$hostUrl) {
+    $lines = @('[ZoneTransfer]', 'ZoneId=3')
+    if ($referrer) { $lines += "ReferrerUrl=$referrer" }
+    if ($hostUrl)  { $lines += "HostUrl=$hostUrl" }
+    Set-Content -LiteralPath $path -Stream Zone.Identifier -Value $lines
+    (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddDays(-2)
+}
+
 function Invoke-Sort([string]$root, [hashtable]$extra = @{}) {
     $p = @{ Path = $root; LogDir = "$root\_logs" } + $extra
     & $sorter @p | Out-Null
@@ -186,6 +195,72 @@ Test 'running twice in a row changes nothing the second time' {
     Invoke-Sort $r
     $out = & $sorter -Path $r -LogDir "$r\_logs"
     Assert ("$out" -match 'Nothing to sort') 'second run did not report nothing to sort'
+}
+
+Test 'source: -BySource sorts files from well-known sites, including blob: links' {
+    param($r)
+    New-OldFile "$r\photo.jpg" 'wa';        Set-Source "$r\photo.jpg" '' 'blob:https://web.whatsapp.com/1f2e3d'
+    New-OldFile "$r\statement.pdf" 'gm';    Set-Source "$r\statement.pdf" 'https://mail.google.com/mail/u/0/' 'https://mail-attachment.googleusercontent.com/x'
+    New-OldFile "$r\notes.docx" 'dr';       Set-Source "$r\notes.docx" '' 'https://drive.usercontent.google.com/download?id=1'
+    New-OldFile "$r\random.pdf" 'web';      Set-Source "$r\random.pdf" 'https://example.org/page' 'https://example.org/random.pdf'
+    New-OldFile "$r\local.pdf" 'no source'
+    Invoke-Sort $r @{ BySource = $true }
+    Assert (Test-Path "$r\From WhatsApp\photo.jpg") 'WhatsApp blob: download not in From WhatsApp'
+    Assert (Test-Path "$r\From Gmail\statement.pdf") 'Gmail attachment not in From Gmail'
+    Assert (Test-Path "$r\From Google Drive\notes.docx") 'Drive download not in From Google Drive'
+    Assert (Test-Path "$r\Documents\PDFs\random.pdf") 'unknown site should fall back to type'
+    Assert (Test-Path "$r\Documents\PDFs\local.pdf") 'file without a source should fall back to type'
+}
+
+Test 'source: without -BySource or source rules, the download source is ignored' {
+    param($r)
+    New-OldFile "$r\photo.jpg" 'wa'; Set-Source "$r\photo.jpg" '' 'https://web.whatsapp.com/x'
+    Invoke-Sort $r
+    Assert (Test-Path "$r\Images\photo.jpg") 'source used without being asked'
+}
+
+Test 'source: your own site rules, with subdomains and wildcards' {
+    param($r)
+    $rules = "$r\_logs\rules.json"
+    '{ "sources": { "Finance": ["examplebank.com"], "College": ["*.university.edu"] } }' | Set-Content $rules
+    New-OldFile "$r\statement.pdf" 'bank'; Set-Source "$r\statement.pdf" 'https://netbanking.examplebank.com/stmts' ''
+    New-OldFile "$r\notes.pdf" 'uni';      Set-Source "$r\notes.pdf" 'https://lms.cs.university.edu/course' ''
+    New-OldFile "$r\fake.pdf" 'phish';     Set-Source "$r\fake.pdf" 'https://examplebank.com.evil.net/x' ''
+    Invoke-Sort $r @{ RulesFile = $rules }
+    Assert (Test-Path "$r\Finance\statement.pdf") 'subdomain of examplebank.com not matched'
+    Assert (Test-Path "$r\College\notes.pdf") 'wildcard site rule not matched'
+    Assert (Test-Path "$r\Documents\PDFs\fake.pdf") 'look-alike domain wrongly matched'
+}
+
+Test 'names: file-name rules come first, and are logged with a reason' {
+    param($r)
+    $rules = "$r\_logs\rules.json"
+    '{ "names": { "Finance": ["*invoice*", "*receipt*"], "Images\\Screenshots": ["Screenshot*"] } }' | Set-Content $rules
+    New-OldFile "$r\Invoice-2026-11.pdf" 'inv'
+    New-OldFile "$r\Screenshot 2026-11-20 101500.png" 'shot'
+    New-OldFile "$r\holiday.png" 'pic'
+    Invoke-Sort $r @{ RulesFile = $rules }
+    Assert (Test-Path "$r\Finance\Invoice-2026-11.pdf") 'name rule (case-insensitive) not applied'
+    Assert (Test-Path "$r\Images\Screenshots\Screenshot 2026-11-20 101500.png") 'nested name-rule folder not used'
+    Assert (Test-Path "$r\Images\holiday.png") 'other images should still sort by type'
+    $log = Import-Csv (Get-ChildItem "$r\_logs" -Filter 'sort-*.csv' | Select-Object -First 1).FullName
+    Assert (($log | Where-Object { $_.To -like '*Invoice*' }).Reason -eq 'name matches *invoice*') 'reason not logged'
+}
+
+Test 'running total adds up across runs' {
+    param($r)
+    New-OldFile "$r\a.pdf" 'a'; Invoke-Sort $r
+    New-OldFile "$r\b.pdf" 'b'; New-OldFile "$r\c.png" 'c'; Invoke-Sort $r
+    $stats = Get-Content "$r\_logs\stats.json" -Raw | ConvertFrom-Json
+    Assert ($stats.Files -eq 3) "expected 3 files in the running total, got $($stats.Files)"
+}
+
+Test 'cleanup: also checks "From ..." folders' {
+    param($r)
+    New-OldFile "$r\From WhatsApp\photo.jpg" 'same photo'
+    New-OldFile "$r\Images\photo.jpg" 'same photo'
+    $items = @(Find-Items $r)
+    Assert ($items.Count -eq 1) "expected 1 duplicate, got $($items.Count)"
 }
 
 Test 'cleanup: finds duplicates across subfolders and keeps the sorted copy' {

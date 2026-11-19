@@ -28,6 +28,8 @@ param(
     # Also look inside your own subfolders (unzipped apps, projects...). Off by default, because
     # two apps can legitimately contain identical files, and removing one could break an app.
     [switch]$IncludeAllFolders,
+    # More top-level folders that SundaySort sorts into (from your rules). Folders named "From ..." are always included.
+    [string[]]$ExtraFolders,
     # For testing: use this list (objects with Name and Version) instead of the installed-programs list in the registry.
     [object[]]$InstalledPrograms
 )
@@ -161,7 +163,8 @@ function Test-InScope([string]$full) {
     if ($IncludeAllFolders) { return $true }
     $rel = $full.Substring($Path.Length).TrimStart('\')
     if ($rel -notmatch '\\') { return $true }
-    $sortFolders -contains ($rel -split '\\')[0]
+    $top = ($rel -split '\\')[0]
+    ($sortFolders -contains $top) -or ($ExtraFolders -contains $top) -or ($top -like 'From *')
 }
 $all = @(Get-ChildItem -LiteralPath $Path -File -Recurse -Force -ErrorAction SilentlyContinue | Where-Object {
     -not ($_.Attributes -band [IO.FileAttributes]::Hidden) -and -not ($_.Attributes -band [IO.FileAttributes]::System) -and

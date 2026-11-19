@@ -8,6 +8,7 @@
     .\Sort-Downloads.ps1                  # sort your Downloads folder
     .\Sort-Downloads.ps1 -Path D:\Inbox   # sort another folder
     .\Sort-Downloads.ps1 -RulesFile .\my-rules.json
+    .\Sort-Downloads.ps1 -BySource        # files from WhatsApp, Gmail, Drive... get their own folders
 #>
 [CmdletBinding()]
 param(
@@ -17,8 +18,12 @@ param(
     [switch]$DryRun,
     # Leave files alone that changed in the last N minutes (downloads still in progress).
     [int]$MinAgeMinutes = 10,
-    # Optional JSON file that adds or overrides folder rules. See examples\rules.example.json.
+    # Optional JSON file with your own rules: by extension, by file name, or by the website a file came from.
+    # See examples\rules.example.json.
     [string]$RulesFile,
+    # Put files from well-known sites (WhatsApp, Gmail, Google Drive, Discord, GitHub...) into "From <site>" folders.
+    # Uses the download source Windows records for every downloaded file. Nothing leaves your PC.
+    [switch]$BySource,
     # Don't look for exact duplicate files.
     [switch]$NoDuplicateCheck,
     # Where the undo logs are written.
@@ -56,7 +61,7 @@ function Format-Size([double]$bytes) {
     '{0:N0} KB' -f [math]::Max(1, $bytes / 1KB)
 }
 
-function Show-Toast([string]$title, [string]$body, [object[]]$buttons, [string]$body2 = '') {
+function Show-Toast([string]$title, [string]$body, [object[]]$buttons, [string]$body2 = '', [string]$footer = '') {
     # Windows notification. Silently does nothing where toasts aren't available.
     try {
         $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
@@ -66,6 +71,7 @@ function Show-Toast([string]$title, [string]$body, [object[]]$buttons, [string]$
             '<action content="{0}" activationType="protocol" arguments="{1}"/>' -f (& $esc $_.Label), (& $esc $_.Uri)
         }) -join ''
         $lines = (@($title, $body, $body2) | Where-Object { $_ } | ForEach-Object { '<text>{0}</text>' -f (& $esc $_) }) -join ''
+        if ($footer) { $lines += '<text placement="attribution">{0}</text>' -f (& $esc $footer) }
         $xml = '<toast><visual><binding template="ToastGeneric">{0}</binding></visual><actions>{1}</actions></toast>' -f $lines, $actions
         $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
         $doc.LoadXml($xml)
@@ -77,7 +83,36 @@ function Show-Toast([string]$title, [string]$body, [object[]]$buttons, [string]$
 }
 
 function Test-SafeSubfolder([string]$name) {
-    -not ([IO.Path]::IsPathRooted($name) -or $name -match '(^|[\\/])\.\.([\\/]|$)' -or $name.IndexOfAny([IO.Path]::GetInvalidPathChars()) -ge 0)
+    $name -and -not ([IO.Path]::IsPathRooted($name) -or $name -match '(^|[\\/])\.\.([\\/]|$)' -or $name.IndexOfAny([IO.Path]::GetInvalidPathChars()) -ge 0)
+}
+
+# Windows records where every downloaded file came from (the "Mark of the Web").
+# Returns the website's host name, e.g. "mail.google.com", or $null if there's no record.
+function Get-DownloadSource($file) {
+    try { $zone = Get-Content -LiteralPath $file.FullName -Stream Zone.Identifier -ErrorAction Stop } catch { return $null }
+    $values = @{}
+    foreach ($line in $zone) { if ($line -match '^(ReferrerUrl|HostUrl)=(.+)$') { $values[$matches[1]] = $matches[2].Trim() } }
+    # The page you were on (ReferrerUrl) says more than the download server (HostUrl), so try it first.
+    foreach ($key in 'ReferrerUrl', 'HostUrl') {
+        $u = $values[$key]
+        if (-not $u) { continue }
+        $u = $u -replace '^blob:', ''
+        try { $h = ([Uri]$u).Host.ToLower() } catch { continue }
+        if ($h -and $h -ne 'about') { return $h }
+    }
+    $null
+}
+
+# "web.whatsapp.com" matches "whatsapp.com"; patterns with * use wildcards.
+function Find-SourceFolder([string]$sourceHost, $sourceRules) {
+    foreach ($r in $sourceRules) {
+        foreach ($p in $r.Patterns) {
+            $p = $p.ToLower().Trim()
+            if ($p.Contains('*')) { if ($sourceHost -like $p) { return $r.Folder } }
+            elseif ($sourceHost -eq $p -or $sourceHost.EndsWith(".$p")) { return $r.Folder }
+        }
+    }
+    $null
 }
 
 if (-not $Path) { $Path = Get-DownloadsFolder }
@@ -104,14 +139,51 @@ $rules = [ordered]@{
     'Torrents'                = @('.torrent')
 }
 
+# Well-known sites for -BySource. Matching is on the end of the host name, so "web.whatsapp.com" matches "whatsapp.com".
+$builtinSources = @(
+    @{ Folder = 'From WhatsApp';     Patterns = @('whatsapp.com', 'whatsapp.net') }
+    @{ Folder = 'From Gmail';        Patterns = @('mail.google.com', 'mail-attachment.googleusercontent.com') }
+    @{ Folder = 'From Google Drive'; Patterns = @('drive.google.com', 'drive.usercontent.google.com', 'docs.google.com') }
+    @{ Folder = 'From Outlook';      Patterns = @('outlook.live.com', 'outlook.office.com', 'outlook.office365.com', 'attachments.office.net') }
+    @{ Folder = 'From Teams';        Patterns = @('teams.microsoft.com', 'teams.live.com') }
+    @{ Folder = 'From OneDrive';     Patterns = @('onedrive.live.com', '1drv.ms', '*.sharepoint.com') }
+    @{ Folder = 'From Discord';      Patterns = @('discord.com', 'discordapp.com', 'discordapp.net') }
+    @{ Folder = 'From Telegram';     Patterns = @('telegram.org') }
+    @{ Folder = 'From Slack';        Patterns = @('slack.com', 'slack-edge.com', 'slack-files.com') }
+    @{ Folder = 'From GitHub';       Patterns = @('github.com', 'githubusercontent.com') }
+    @{ Folder = 'From LinkedIn';     Patterns = @('linkedin.com', 'licdn.com') }
+    @{ Folder = 'From Canva';        Patterns = @('canva.com') }
+    @{ Folder = 'From Office Online'; Patterns = @('officeapps.live.com', 'office.com', 'microsoft365.com') }
+    @{ Folder = 'From ChatGPT';      Patterns = @('chatgpt.com', 'oaiusercontent.com') }
+    @{ Folder = 'From Claude';       Patterns = @('claude.ai') }
+)
+
+$nameRules   = New-Object System.Collections.Generic.List[object]
+$sourceRules = New-Object System.Collections.Generic.List[object]
+
 if ($RulesFile) {
     $custom = Get-Content -LiteralPath $RulesFile -Raw | ConvertFrom-Json
-    if (-not $custom.folders) { throw "Rules file has no 'folders' section: $RulesFile" }
-    foreach ($prop in $custom.folders.PSObject.Properties) {
-        if (-not (Test-SafeSubfolder $prop.Name)) { throw "Unsafe folder name in rules file: '$($prop.Name)'" }
-        $exts = @($prop.Value | ForEach-Object { $e = "$_".Trim().ToLower(); if (-not $e.StartsWith('.')) { $e = ".$e" }; $e })
-        foreach ($k in @($rules.Keys)) { $rules[$k] = @($rules[$k] | Where-Object { $exts -notcontains $_ }) }
-        $rules[$prop.Name] = $exts
+    if (-not ($custom.folders -or $custom.names -or $custom.sources)) {
+        throw "Rules file needs at least one of 'folders', 'names' or 'sources': $RulesFile"
+    }
+    $sections = @($custom.folders, $custom.names, $custom.sources) | Where-Object { $_ }
+    foreach ($section in $sections) {
+        foreach ($prop in $section.PSObject.Properties) {
+            if (-not (Test-SafeSubfolder $prop.Name)) { throw "Unsafe folder name in rules file: '$($prop.Name)'" }
+        }
+    }
+    if ($custom.folders) {
+        foreach ($prop in $custom.folders.PSObject.Properties) {
+            $exts = @($prop.Value | ForEach-Object { $e = "$_".Trim().ToLower(); if (-not $e.StartsWith('.')) { $e = ".$e" }; $e })
+            foreach ($k in @($rules.Keys)) { $rules[$k] = @($rules[$k] | Where-Object { $exts -notcontains $_ }) }
+            $rules[$prop.Name] = $exts
+        }
+    }
+    if ($custom.names) {
+        foreach ($prop in $custom.names.PSObject.Properties) { $nameRules.Add(@{ Folder = $prop.Name; Patterns = @($prop.Value | ForEach-Object { "$_" }) }) }
+    }
+    if ($custom.sources) {
+        foreach ($prop in $custom.sources.PSObject.Properties) { $sourceRules.Add(@{ Folder = $prop.Name; Patterns = @($prop.Value | ForEach-Object { "$_" }) }) }
     }
 }
 
@@ -145,10 +217,29 @@ if (-not $NoDuplicateCheck) {
 $moves = New-Object System.Collections.Generic.List[object]
 foreach ($f in $files) {
     $ext = $f.Extension.ToLower()
+    $sub = $null; $why = $null
     if ($duplicates.ContainsKey($f.FullName)) {
-        $sub = $duplicateFolder
-    } else {
-        $sub = $otherFolder
+        $sub = $duplicateFolder; $why = 'exact duplicate'
+    }
+    # 1) Your file-name rules, e.g. "*invoice*" -> Finance
+    if (-not $sub) {
+        foreach ($r in $nameRules) {
+            foreach ($p in $r.Patterns) { if ($f.Name -like $p) { $sub = $r.Folder; $why = "name matches $p"; break } }
+            if ($sub) { break }
+        }
+    }
+    # 2) Where it was downloaded from: your rules first, then the built-in sites with -BySource
+    if (-not $sub -and ($sourceRules.Count -or $BySource)) {
+        $src = Get-DownloadSource $f
+        if ($src) {
+            $sub = Find-SourceFolder $src $sourceRules
+            if (-not $sub -and $BySource) { $sub = Find-SourceFolder $src $builtinSources }
+            if ($sub) { $why = "downloaded from $src" }
+        }
+    }
+    # 3) File type
+    if (-not $sub) {
+        $sub = $otherFolder; $why = "type $ext"
         foreach ($k in $rules.Keys) { if ($rules[$k] -contains $ext) { $sub = $k; break } }
     }
     $destDir = Join-Path $Path $sub
@@ -158,7 +249,7 @@ foreach ($f in $files) {
         try { Move-Item -LiteralPath $f.FullName -Destination $target }
         catch { Write-Warning "Skipped (in use?): $($f.Name)"; continue }
     }
-    $moves.Add([pscustomobject]@{ From = $f.FullName; To = $target; Folder = $sub; Bytes = $f.Length })
+    $moves.Add([pscustomobject]@{ From = $f.FullName; To = $target; Folder = $sub; Bytes = $f.Length; Reason = $why })
 }
 
 # ---------- Report ----------
@@ -174,6 +265,15 @@ if ($DryRun) {
     $logFile = Join-Path $LogDir ('sort-{0:yyyyMMdd-HHmmss}.csv' -f (Get-Date))
     $moves | Export-Csv -LiteralPath $logFile -NoTypeInformation -Encoding UTF8
     Write-Output "Moved $($moves.Count) files. Undo with: .\Undo-LastSort.ps1"
+
+    # Running total since the first sort, shown in the notification
+    $statsFile = Join-Path $LogDir 'stats.json'
+    $stats = $null
+    if (Test-Path -LiteralPath $statsFile) { try { $stats = Get-Content -LiteralPath $statsFile -Raw | ConvertFrom-Json } catch { } }
+    if (-not $stats) { $stats = [pscustomobject]@{ Files = 0; Bytes = 0; Since = (Get-Date -Format 'yyyy-MM-dd') } }
+    $stats.Files = [long]$stats.Files + $moves.Count
+    $stats.Bytes = [long]$stats.Bytes + [long](($moves | Measure-Object Bytes -Sum).Sum)
+    $stats | ConvertTo-Json | Set-Content -LiteralPath $statsFile -Encoding UTF8
 }
 }
 
@@ -181,7 +281,13 @@ if ($DryRun) {
 $reclaim = $null
 if ($CleanupReport -and -not $DryRun) {
     try {
-        $reclaim = & (Join-Path $PSScriptRoot 'Find-Reclaimable.ps1') -Path $Path -ReportDir $ReportDir -Summary
+        # Let the cleanup scan look inside the folders this sort uses (including your own rule folders)
+        $myFolders = New-Object System.Collections.Generic.List[string]
+        foreach ($r in $nameRules)      { $myFolders.Add(($r.Folder -split '\\')[0]) }
+        foreach ($r in $sourceRules)    { $myFolders.Add(($r.Folder -split '\\')[0]) }
+        foreach ($k in $rules.Keys)     { $myFolders.Add(($k -split '\\')[0]) }
+        $myFolders = @($myFolders | Select-Object -Unique)
+        $reclaim = & (Join-Path $PSScriptRoot 'Find-Reclaimable.ps1') -Path $Path -ReportDir $ReportDir -Summary -ExtraFolders $myFolders
         if ($reclaim.Count) {
             Write-Output ('{0} could be freed ({1} files). Report: {2}' -f (Format-Size $reclaim.Bytes), $reclaim.Count, $reclaim.ReportHtml)
         }
@@ -216,5 +322,10 @@ if ($Notify -and -not $DryRun -and ($moves.Count -or $hasReclaim)) {
     }
     $buttons += @{ Label = 'Open folder'; Uri = ([Uri]$Path).AbsoluteUri }
     if ($moves.Count -and (Test-Path 'HKCU:\Software\Classes\sundaysort')) { $buttons += @{ Label = 'Undo'; Uri = 'sundaysort:undo' } }
-    Show-Toast $title $body $buttons $body2
+    $footer = ''
+    if ($stats -and $stats.Files) {
+        $since = try { ([datetime]$stats.Since).ToString('d MMM yyyy') } catch { $stats.Since }
+        $footer = '{0:N0} files sorted since {1}' -f $stats.Files, $since
+    }
+    Show-Toast $title $body $buttons $body2 $footer
 }

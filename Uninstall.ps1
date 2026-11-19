@@ -24,6 +24,14 @@ if (Test-Path $key) {
     if ($cmd -and $cmd -like "*$InstallDir*") { Remove-Item -Path $key -Recurse; Write-Output 'Removed the sundaysort: link used by the Undo button.' }
 }
 
+foreach ($base in 'HKCU:\Software\Classes\Directory\shell\SundaySort', 'HKCU:\Software\Classes\Directory\Background\shell\SundaySort') {
+    if (Test-Path $base) {
+        $cmd = (Get-Item "$base\command" -ErrorAction SilentlyContinue).GetValue('')
+        if ($cmd -and $cmd -like "*$InstallDir*") { Remove-Item -Path $base -Recurse; $removedMenu = $true }
+    }
+}
+if ($removedMenu) { Write-Output 'Removed "Tidy with SundaySort" from the right-click menu.' }
+
 foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'rules.json', 'Uninstall.ps1') {
     $p = Join-Path $InstallDir $f
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p }

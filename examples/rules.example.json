@@ -1,6 +1,15 @@
 {
+  "names": {
+    "Finance": ["*invoice*", "*receipt*", "*statement*"],
+    "Images\\Screenshots": ["Screenshot*", "Screen Shot*"],
+    "Tickets": ["*boarding pass*", "*e-ticket*"]
+  },
+  "sources": {
+    "Finance": ["mybank.example.com", "*.paypal.com"],
+    "College": ["*.university.edu", "classroom.google.com"],
+    "From WhatsApp": ["whatsapp.com"]
+  },
   "folders": {
-    "Images\\Screenshots": [".png"],
     "Books": [".epub", ".mobi"],
     "3D Models": [".stl", ".obj", ".fbx", ".blend"]
   }

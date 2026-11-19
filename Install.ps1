@@ -5,6 +5,7 @@
     .\Install.ps1                                   # every Sunday at 9 PM
     .\Install.ps1 -Day Friday -Time "6:30 PM"
     .\Install.ps1 -Path "D:\Downloads" -RulesFile .\my-rules.json
+    .\Install.ps1 -BySource                         # also sort by site: From WhatsApp, From Gmail...
 #>
 [CmdletBinding()]
 param(
@@ -21,6 +22,10 @@ param(
     [switch]$NoNotify,
     # Don't look for old installers, unzipped archives and duplicates each week.
     [switch]$NoCleanupReport,
+    # Put files from well-known sites (WhatsApp, Gmail, Drive, Discord...) into "From <site>" folders.
+    [switch]$BySource,
+    # Don't add "Tidy with SundaySort" to the right-click menu of folders.
+    [switch]$NoContextMenu,
     [switch]$SkipPreview
 )
 $ErrorActionPreference = 'Stop'
@@ -34,13 +39,16 @@ foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1'
 }
 Get-ChildItem -LiteralPath $InstallDir -Filter '*.ps1' | Unblock-File
 
-$sortArgs = ''
-if ($Path) { $sortArgs += " -Path `"$((Resolve-Path -LiteralPath $Path).ProviderPath)`"" }
+# Options shared by the weekly task and the right-click menu
+$ruleArgs = ''
 if ($RulesFile) {
     $rulesTarget = Join-Path $InstallDir 'rules.json'
     Copy-Item -LiteralPath $RulesFile -Destination $rulesTarget -Force
-    $sortArgs += " -RulesFile `"$rulesTarget`""
+    $ruleArgs += " -RulesFile `"$rulesTarget`""
 }
+if ($BySource) { $ruleArgs += ' -BySource' }
+$sortArgs = $ruleArgs
+if ($Path) { $sortArgs += " -Path `"$((Resolve-Path -LiteralPath $Path).ProviderPath)`"" }
 $sorter = Join-Path $InstallDir 'Sort-Downloads.ps1'
 
 # 2) Show what the first run will do
@@ -49,6 +57,7 @@ if (-not $SkipPreview) {
     $previewArgs = @{ DryRun = $true }
     if ($Path) { $previewArgs.Path = $Path }
     if ($RulesFile) { $previewArgs.RulesFile = $rulesTarget }
+    if ($BySource) { $previewArgs.BySource = $true }
     & $sorter @previewArgs
 }
 
@@ -65,7 +74,18 @@ if (-not $NoNotify) {
     Set-Item -Path "$key\shell\open\command" -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$undo`" -Notify"
 }
 
-# 4) Schedule it
+# 4) Right-click menu: "Tidy with SundaySort" on a folder, and on the empty space inside a folder.
+#    Windows 11 shows it under "Show more options". Registered for this user only.
+if (-not $NoContextMenu) {
+    $menuCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sorter`" -Path `"%V`" -MinAgeMinutes 1 -Notify$ruleArgs"
+    foreach ($base in 'HKCU:\Software\Classes\Directory\shell\SundaySort', 'HKCU:\Software\Classes\Directory\Background\shell\SundaySort') {
+        New-Item -Path "$base\command" -Force | Out-Null
+        Set-Item -Path $base -Value 'Tidy with SundaySort'
+        Set-Item -Path "$base\command" -Value $menuCmd
+    }
+}
+
+# 5) Schedule it
 $action    = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sorter`"$sortArgs"
 $trigger   = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $Day -At $at
 $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
@@ -80,4 +100,5 @@ Write-Output "Scheduled every $Day at $($at.ToString('h:mm tt')). Next run: $nex
 Write-Output "Sort now:  & `"$sorter`""
 Write-Output "Undo:      & `"$(Join-Path $InstallDir 'Undo-LastSort.ps1')`""
 Write-Output "Cleanup:   & `"$(Join-Path $InstallDir 'Find-Reclaimable.ps1')`""
+if (-not $NoContextMenu) { Write-Output 'Right-click any folder -> "Tidy with SundaySort" (Windows 11: under "Show more options")' }
 Write-Output "Remove:    & `"$(Join-Path $InstallDir 'Uninstall.ps1')`""

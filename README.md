@@ -16,11 +16,14 @@ SundaySort is a small PowerShell tool for Windows. Every week it takes the loose
 ## Features
 
 - **Sorts by file type** into 16 folders (Documents, Images, Videos, Audio, Archives, Installers, Code, Design, Fonts and more)
+- **Or by where a file came from.** Windows records the website each download came from. SundaySort can use that to put files into `From WhatsApp`, `From Gmail`, `From Google Drive` and so on, or into your own folders, such as anything from your bank's site going to `Finance`. This works even when the file name is useless, like `1000221658.pdf`.
+- **Rules based on file names.** For example, `*invoice*` goes to `Finance` and `Screenshot*` goes to `Images\Screenshots`.
+- **Right-click any folder → "Tidy with SundaySort"**, not just Downloads. On Windows 11 it's under *Show more options*.
 - **Runs on its own every week.** If your PC was off at that time, it runs the next time you turn it on.
 - **Never deletes.** Exact duplicates (same contents, checked with SHA-256) go into a `_Duplicates` folder for you to review.
 - **Undo with one command.** Every run is logged.
 - **Finds space you can free.** Each week it checks for installers of apps that are already installed (same or older version), zip files whose contents are already unzipped, and duplicates anywhere in Downloads. You get a report to review, and nothing is deleted until you say so.
-- **Tells you what it did.** After each weekly run, a Windows notification says something like *"SundaySort tidied 23 files (1.2 GB) · You could free 6.1 GB"*, with **Review**, **Open folder** and **Undo** buttons.
+- **Tells you what it did.** After each weekly run, a Windows notification says something like *"SundaySort tidied 23 files (1.2 GB) · You could free 6.1 GB"*, with **Review**, **Open folder** and **Undo** buttons and a running total (*"1,240 files sorted since 19 Nov 2026"*).
 - **Leaves downloads in progress alone.** `.crdownload` and `.part` files, and anything changed in the last 10 minutes, are skipped.
 - **Never overwrites files.** If a name is taken, the new file gets ` (2)` added to its name.
 - **Custom rules.** Use a small JSON file to add or rename folders.
@@ -43,7 +46,29 @@ To use a different day or time:
 powershell -ExecutionPolicy Bypass -File .\Install.ps1 -Day Friday -Time "6:30 PM"
 ```
 
-Prefer no notifications? Add `-NoNotify`. Don't want the weekly cleanup report? Add `-NoCleanupReport`.
+You can add any of these options:
+
+| Option | What it does |
+|---|---|
+| `-BySource` | Also sort by website: `From WhatsApp`, `From Gmail`, `From Google Drive`, `From Discord`… |
+| `-RulesFile .\my-rules.json` | Use your own rules (see [Custom rules](#custom-rules)) |
+| `-NoNotify` | No notification after the weekly run |
+| `-NoCleanupReport` | Don't look for space you could free |
+| `-NoContextMenu` | Don't add "Tidy with SundaySort" to the right-click menu |
+
+## Sort by where a file came from
+
+When you download a file, your browser tags it with the page and server it came from, a Windows feature called the *Mark of the Web*. SundaySort reads that tag locally. Nothing is sent anywhere.
+
+With `-BySource`, files from these sites get their own folders: **WhatsApp, Gmail, Google Drive, Outlook, Teams, OneDrive, Discord, Telegram, Slack, GitHub, LinkedIn, Canva, Office Online, ChatGPT, Claude**. Files from any other site, and files with no tag, are sorted by type as usual.
+
+For your own sites, add a `sources` section to your rules. A rule matches the site and its subdomains, so `mybank.com` also matches `netbanking.mybank.com`, but not look-alikes such as `mybank.com.evil.net`:
+
+```json
+{ "sources": { "Finance": ["mybank.com", "*.paypal.com"], "College": ["*.university.edu"] } }
+```
+
+*Good to know:* the tag is added by browsers like Edge, Chrome, Brave and Firefox, and by most apps that save downloads. Files you copied from a USB drive or made yourself don't have one.
 
 ## Find space you can free
 
@@ -76,23 +101,30 @@ The report says *why* each file was flagged, and clicking a file opens its folde
 | `-DryRun` | Shows what would move. Moves nothing. |
 | `-Path <folder>` | Sorts a different folder (default: your Downloads folder, even if you moved it) |
 | `-MinAgeMinutes 10` | Skips files changed more recently than this |
-| `-RulesFile <file>` | Uses custom folder rules (see below) |
+| `-RulesFile <file>` | Uses custom rules (see below) |
+| `-BySource` | Sorts files from well-known sites into `From <site>` folders |
 | `-NoDuplicateCheck` | Doesn't look for duplicate files |
 | `-Notify` | Shows a notification with a summary when done |
 
 ## Custom rules
 
-Copy `examples/rules.example.json` and edit it. Each entry is a folder name and the file extensions that go into it. Your rules win over the built-in ones.
+Copy `examples/rules.example.json` and edit it. It has three sections, and you can use any of them:
 
 ```json
 {
-  "folders": {
-    "Images\\Screenshots": [".png"],
-    "Books": [".epub", ".pdf"],
-    "3D Models": [".stl", ".obj", ".fbx", ".blend"]
-  }
+  "names":   { "Finance": ["*invoice*", "*receipt*"], "Images\\Screenshots": ["Screenshot*"] },
+  "sources": { "Finance": ["mybank.com"], "College": ["*.university.edu"] },
+  "folders": { "Books": [".epub", ".mobi"], "3D Models": [".stl", ".obj"] }
 }
 ```
+
+| Section | Matches on | Example |
+|---|---|---|
+| `names` | The file name, with `*` wildcards, ignoring capitals | `"*invoice*"` matches `Invoice-2026-11.pdf` |
+| `sources` | The website it was downloaded from | `"mybank.com"` |
+| `folders` | The file extension, overriding the built-in folders | `".epub"` |
+
+Files are checked in this order: **duplicates → `names` → `sources` → built-in sites (with `-BySource`) → file type**. Every move is logged with its reason, such as `name matches *invoice*` or `downloaded from mail.google.com`, so you can always see why a file went where it did.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Install.ps1 -RulesFile .\my-rules.json
@@ -104,7 +136,7 @@ powershell -ExecutionPolicy Bypass -File .\Install.ps1 -RulesFile .\my-rules.jso
 & "$env:LOCALAPPDATA\SundaySort\Uninstall.ps1"
 ```
 
-This removes the weekly task, the installed scripts and the `sundaysort:` link used by the notification's Undo button. Your sorted files stay where they are.
+This removes the weekly task, the installed scripts, the right-click menu entry and the `sundaysort:` link used by the notification's Undo button. Your sorted files stay where they are.
 
 ## Where things live
 
@@ -115,6 +147,8 @@ This removes the weekly task, the installed scripts and the `sundaysort:` link u
 | Cleanup reports | `%LOCALAPPDATA%\SundaySort\reports\` |
 | Weekly task | Task Scheduler → `SundaySort - weekly Downloads cleanup` |
 | Undo button link | `HKEY_CURRENT_USER\Software\Classes\sundaysort` (your user only, no admin) |
+| Right-click menu | `HKEY_CURRENT_USER\Software\Classes\Directory\shell\SundaySort` and `…\Directory\Background\shell\SundaySort` |
+| Running total | `%LOCALAPPDATA%\SundaySort\logs\stats.json` |
 
 ## Tests
 
@@ -122,7 +156,7 @@ This removes the weekly task, the installed scripts and the `sundaysort:` link u
 .\tests\Run-Tests.ps1
 ```
 
-The tests run in throwaway temporary folders and cover sorting, dry runs, duplicates, skipped files, name clashes, undo, custom rules and the cleanup report. GitHub runs them on every push, on both Windows PowerShell 5.1 and PowerShell 7.
+The tests run in throwaway temporary folders and cover sorting, dry runs, duplicates, skipped files, name clashes, undo, custom rules, file-name and download-source rules (including look-alike domains), the running total and the cleanup report. GitHub runs them on every push, on both Windows PowerShell 5.1 and PowerShell 7.
 
 ## FAQ
 
@@ -130,7 +164,7 @@ The tests run in throwaway temporary folders and cover sorting, dry runs, duplic
 No. It only moves loose files at the top level of the folder.
 
 **Does it send anything anywhere?**
-No. It has no network access and no telemetry. Everything stays on your PC.
+No. It has no network access and no telemetry. Everything stays on your PC. Sorting by source reads a tag Windows already stores next to each downloaded file; it doesn't look anything up online.
 
 **Windows says the script "cannot be loaded because running scripts is disabled".**
 Use the `powershell -ExecutionPolicy Bypass -File ...` form shown above. It only affects that one command.
