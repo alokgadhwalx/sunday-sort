@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Removes the weekly task and the installed scripts. Your files and folders are not touched.
-    Undo logs are kept unless you pass -RemoveLogs.
+    Undo logs and cleanup reports are kept unless you pass -RemoveLogs.
 #>
 [CmdletBinding()]
 param(
@@ -24,11 +24,15 @@ if (Test-Path $key) {
     if ($cmd -and $cmd -like "*$InstallDir*") { Remove-Item -Path $key -Recurse; Write-Output 'Removed the sundaysort: link used by the Undo button.' }
 }
 
-foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'rules.json', 'Uninstall.ps1') {
+foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'rules.json', 'Uninstall.ps1') {
     $p = Join-Path $InstallDir $f
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p }
 }
-$logs = Join-Path $InstallDir 'logs'
-if ($RemoveLogs -and (Test-Path -LiteralPath $logs)) { Remove-Item -LiteralPath $logs -Recurse }
+if ($RemoveLogs) {
+    foreach ($d in 'logs', 'reports') {
+        $p = Join-Path $InstallDir $d
+        if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse }
+    }
+}
 if ((Test-Path -LiteralPath $InstallDir) -and -not (Get-ChildItem -LiteralPath $InstallDir -Force)) { Remove-Item -LiteralPath $InstallDir }
 Write-Output "SundaySort removed. Your sorted files stay where they are."

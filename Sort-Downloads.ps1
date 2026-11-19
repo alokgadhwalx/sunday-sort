@@ -24,7 +24,10 @@ param(
     # Where the undo logs are written.
     [string]$LogDir = (Join-Path $env:LOCALAPPDATA 'SundaySort\logs'),
     # Show a Windows notification with a summary (used by the weekly task).
-    [switch]$Notify
+    [switch]$Notify,
+    # After sorting, look for space that could be freed and write a report (see Find-Reclaimable.ps1).
+    [switch]$CleanupReport,
+    [string]$ReportDir = (Join-Path $env:LOCALAPPDATA 'SundaySort\reports')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,7 +56,7 @@ function Format-Size([double]$bytes) {
     '{0:N0} KB' -f [math]::Max(1, $bytes / 1KB)
 }
 
-function Show-Toast([string]$title, [string]$body, [object[]]$buttons) {
+function Show-Toast([string]$title, [string]$body, [object[]]$buttons, [string]$body2 = '') {
     # Windows notification. Silently does nothing where toasts aren't available.
     try {
         $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
@@ -62,7 +65,8 @@ function Show-Toast([string]$title, [string]$body, [object[]]$buttons) {
         $actions = ($buttons | ForEach-Object {
             '<action content="{0}" activationType="protocol" arguments="{1}"/>' -f (& $esc $_.Label), (& $esc $_.Uri)
         }) -join ''
-        $xml = '<toast><visual><binding template="ToastGeneric"><text>{0}</text><text>{1}</text></binding></visual><actions>{2}</actions></toast>' -f (& $esc $title), (& $esc $body), $actions
+        $lines = (@($title, $body, $body2) | Where-Object { $_ } | ForEach-Object { '<text>{0}</text>' -f (& $esc $_) }) -join ''
+        $xml = '<toast><visual><binding template="ToastGeneric">{0}</binding></visual><actions>{1}</actions></toast>' -f $lines, $actions
         $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
         $doc.LoadXml($xml)
         $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
@@ -160,8 +164,7 @@ foreach ($f in $files) {
 # ---------- Report ----------
 if ($moves.Count -eq 0) {
     Write-Output "Nothing to sort in $Path"
-    return
-}
+} else {
 $moves | Group-Object Folder | Sort-Object Name | Select-Object Count, @{ n = 'Folder'; e = { $_.Name } } |
     Format-Table -AutoSize | Out-String | Write-Output
 if ($DryRun) {
@@ -171,14 +174,47 @@ if ($DryRun) {
     $logFile = Join-Path $LogDir ('sort-{0:yyyyMMdd-HHmmss}.csv' -f (Get-Date))
     $moves | Export-Csv -LiteralPath $logFile -NoTypeInformation -Encoding UTF8
     Write-Output "Moved $($moves.Count) files. Undo with: .\Undo-LastSort.ps1"
+}
+}
 
-    if ($Notify) {
-        $total = ($moves | Measure-Object Bytes -Sum).Sum
-        $top = $moves | Group-Object { Split-Path $_.Folder -Leaf } | Sort-Object Count -Descending | Select-Object -First 3 |
-            ForEach-Object { '{0} {1}' -f $_.Name, $_.Count }
-        $plural = if ($moves.Count -eq 1) { 'file' } else { 'files' }
-        $buttons = @(@{ Label = 'Open folder'; Uri = ([Uri]$Path).AbsoluteUri })
-        if (Test-Path 'HKCU:\Software\Classes\sundaysort') { $buttons += @{ Label = 'Undo'; Uri = 'sundaysort:undo' } }
-        Show-Toast ('SundaySort tidied {0} {1} ({2})' -f $moves.Count, $plural, (Format-Size $total)) ($top -join '  ·  ') $buttons
+# ---------- Cleanup report ----------
+$reclaim = $null
+if ($CleanupReport -and -not $DryRun) {
+    try {
+        $reclaim = & (Join-Path $PSScriptRoot 'Find-Reclaimable.ps1') -Path $Path -ReportDir $ReportDir -Summary
+        if ($reclaim.Count) {
+            Write-Output ('{0} could be freed ({1} files). Report: {2}' -f (Format-Size $reclaim.Bytes), $reclaim.Count, $reclaim.ReportHtml)
+        }
+    } catch {
+        Write-Warning "Cleanup report failed: $($_.Exception.Message)"
     }
+}
+
+# ---------- Notification ----------
+$hasReclaim = $reclaim -and $reclaim.Count
+if ($Notify -and -not $DryRun -and ($moves.Count -or $hasReclaim)) {
+    $buttons = @()
+    if ($moves.Count) {
+        $total = ($moves | Measure-Object Bytes -Sum).Sum
+        $plural = if ($moves.Count -eq 1) { 'file' } else { 'files' }
+        $title = 'SundaySort tidied {0} {1} ({2})' -f $moves.Count, $plural, (Format-Size $total)
+        $body = ($moves | Group-Object { Split-Path $_.Folder -Leaf } | Sort-Object Count -Descending | Select-Object -First 3 |
+            ForEach-Object { '{0} {1}' -f $_.Name, $_.Count }) -join '  ·  '
+    } else {
+        $title = 'SundaySort weekly check'
+        $body = 'Nothing new to sort.'
+    }
+    $body2 = ''
+    if ($hasReclaim) {
+        $parts = @()
+        $pl = { param($n, $one, $many) if ($n -eq 1) { "1 $one" } else { "$n $many" } }
+        if ($reclaim.Installers) { $parts += & $pl $reclaim.Installers 'old installer' 'old installers' }
+        if ($reclaim.Archives)   { $parts += & $pl $reclaim.Archives 'unzipped archive' 'unzipped archives' }
+        if ($reclaim.Duplicates) { $parts += & $pl $reclaim.Duplicates 'duplicate' 'duplicates' }
+        $body2 = 'You could free {0}: {1}' -f (Format-Size $reclaim.Bytes), ($parts -join ', ')
+        if ($reclaim.ReportHtml) { $buttons += @{ Label = 'Review'; Uri = ([Uri]$reclaim.ReportHtml).AbsoluteUri } }
+    }
+    $buttons += @{ Label = 'Open folder'; Uri = ([Uri]$Path).AbsoluteUri }
+    if ($moves.Count -and (Test-Path 'HKCU:\Software\Classes\sundaysort')) { $buttons += @{ Label = 'Undo'; Uri = 'sundaysort:undo' } }
+    Show-Toast $title $body $buttons $body2
 }

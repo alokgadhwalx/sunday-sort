@@ -5,9 +5,9 @@
 ![PowerShell 5.1 | 7](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE)
 [![MIT license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**Your Downloads folder, tidied automatically once a week.**
+**Your Downloads folder, tidied automatically once a week, plus a report of what's safe to delete.**
 
-SundaySort is a small PowerShell tool for Windows. Every week it takes the loose files in your Downloads folder and sorts them into folders by type: PDFs, images, installers, archives and so on. It **never deletes anything**, and every run can be undone.
+SundaySort is a small PowerShell tool for Windows. Every week it takes the loose files in your Downloads folder and sorts them into folders by type: PDFs, images, installers, archives and so on. Then it tells you how much space you could free: **installers for apps you already have, zip files you've already unzipped, and duplicates**. It **never deletes anything on its own**, and every sort can be undone.
 
 <p align="center">
   <img src="assets/demo.svg" alt="A messy Downloads folder being sorted into folders by type" width="760">
@@ -19,7 +19,8 @@ SundaySort is a small PowerShell tool for Windows. Every week it takes the loose
 - **Runs on its own every week.** If your PC was off at that time, it runs the next time you turn it on.
 - **Never deletes.** Exact duplicates (same contents, checked with SHA-256) go into a `_Duplicates` folder for you to review.
 - **Undo with one command.** Every run is logged.
-- **Tells you what it did.** After each weekly run, a Windows notification says something like *"SundaySort tidied 23 files (1.2 GB)"*, with **Open folder** and **Undo** buttons.
+- **Finds space you can free.** Each week it checks for installers of apps that are already installed (same or older version), zip files whose contents are already unzipped, and duplicates anywhere in Downloads. You get a report to review, and nothing is deleted until you say so.
+- **Tells you what it did.** After each weekly run, a Windows notification says something like *"SundaySort tidied 23 files (1.2 GB) · You could free 6.1 GB"*, with **Review**, **Open folder** and **Undo** buttons.
 - **Leaves downloads in progress alone.** `.crdownload` and `.part` files, and anything changed in the last 10 minutes, are skipped.
 - **Never overwrites files.** If a name is taken, the new file gets ` (2)` added to its name.
 - **Custom rules.** Use a small JSON file to add or rename folders.
@@ -42,7 +43,25 @@ To use a different day or time:
 powershell -ExecutionPolicy Bypass -File .\Install.ps1 -Day Friday -Time "6:30 PM"
 ```
 
-Prefer no notifications? Add `-NoNotify`.
+Prefer no notifications? Add `-NoNotify`. Don't want the weekly cleanup report? Add `-NoCleanupReport`.
+
+## Find space you can free
+
+```powershell
+.\Find-Reclaimable.ps1                 # look only: prints a summary and writes an HTML report
+.\Remove-Reclaimable.ps1 -ListOnly     # preview what would be moved
+.\Remove-Reclaimable.ps1               # asks once, then moves them to the Recycle Bin
+```
+
+| It flags | How it decides |
+|---|---|
+| **Installers for apps you have** | Matches the installer's name and product info against the apps installed on your PC. Skips it if the installer is a **newer** version than what's installed, since that might be an update you still want. |
+| **Archives you've already unzipped** | A `.zip` is only flagged when a folder with the same name holds **every file** in the zip. `.rar`/`.7z` files are flagged when a matching folder exists, and the report says their contents weren't checked. |
+| **Duplicates** | Same size and same SHA-256 hash. It keeps the copy that's already sorted. |
+
+It only looks at loose files and the folders SundaySort creates, **never inside your own folders**. Two unzipped apps can legitimately contain identical files, and removing one could break an app. To scan everything anyway, use `-IncludeAllFolders`.
+
+The report says *why* each file was flagged, and clicking a file opens its folder. `Remove-Reclaimable.ps1` checks everything again first: it skips files that have changed since the report, and duplicates whose kept copy has gone missing. It only ever uses the **Recycle Bin**.
 
 ## Use it without installing
 
@@ -93,6 +112,7 @@ This removes the weekly task, the installed scripts and the `sundaysort:` link u
 |---|---|
 | Installed scripts | `%LOCALAPPDATA%\SundaySort\` |
 | Undo logs | `%LOCALAPPDATA%\SundaySort\logs\` |
+| Cleanup reports | `%LOCALAPPDATA%\SundaySort\reports\` |
 | Weekly task | Task Scheduler → `SundaySort - weekly Downloads cleanup` |
 | Undo button link | `HKEY_CURRENT_USER\Software\Classes\sundaysort` (your user only, no admin) |
 
@@ -102,7 +122,7 @@ This removes the weekly task, the installed scripts and the `sundaysort:` link u
 .\tests\Run-Tests.ps1
 ```
 
-The tests run in throwaway temporary folders and cover sorting, dry runs, duplicates, skipped files, name clashes, undo and custom rules. GitHub runs them on every push, on both Windows PowerShell 5.1 and PowerShell 7.
+The tests run in throwaway temporary folders and cover sorting, dry runs, duplicates, skipped files, name clashes, undo, custom rules and the cleanup report. GitHub runs them on every push, on both Windows PowerShell 5.1 and PowerShell 7.
 
 ## FAQ
 

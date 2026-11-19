@@ -9,6 +9,13 @@ $ErrorActionPreference = 'Stop'
 $repo   = Split-Path -Parent $PSScriptRoot
 $sorter = Join-Path $repo 'Sort-Downloads.ps1'
 $undo   = Join-Path $repo 'Undo-LastSort.ps1'
+$finder = Join-Path $repo 'Find-Reclaimable.ps1'
+$remover = Join-Path $repo 'Remove-Reclaimable.ps1'
+$noApps = @([pscustomobject]@{ Name = 'Nothing Installed Here'; Version = '1.0' })
+
+function Find-Items([string]$root, [object[]]$apps = $noApps) {
+    @(& $finder -Path $root -NoReport -PassThru -InstalledPrograms $apps | Where-Object { $_.PSObject.Properties['Category'] })
+}
 $script:failed = 0
 $script:passed = 0
 
@@ -179,6 +186,73 @@ Test 'running twice in a row changes nothing the second time' {
     Invoke-Sort $r
     $out = & $sorter -Path $r -LogDir "$r\_logs"
     Assert ("$out" -match 'Nothing to sort') 'second run did not report nothing to sort'
+}
+
+Test 'cleanup: finds duplicates across subfolders and keeps the sorted copy' {
+    param($r)
+    New-OldFile "$r\Documents\PDFs\report.pdf" 'same content'
+    New-OldFile "$r\_Duplicates (check, then delete)\report (1).pdf" 'same content'
+    New-OldFile "$r\Images\unique.png" 'different'
+    $items = @(Find-Items $r)
+    Assert ($items.Count -eq 1) "expected 1 item, got $($items.Count)"
+    Assert ($items[0].Category -eq 'Duplicate') 'not reported as a duplicate'
+    Assert ($items[0].Path -like '*_Duplicates*report (1).pdf') 'flagged the wrong copy'
+    Assert ($items[0].KeptCopy -like '*Documents\PDFs\report.pdf') 'kept the wrong copy'
+}
+
+Test 'cleanup: never looks inside your own folders unless asked' {
+    param($r)
+    New-OldFile "$r\ToolA\license.txt" 'same license'
+    New-OldFile "$r\ToolB\license.txt" 'same license'
+    Assert (@(Find-Items $r).Count -eq 0) 'flagged files inside user folders'
+    $all = @(& $finder -Path $r -NoReport -PassThru -IncludeAllFolders -InstalledPrograms $noApps | Where-Object { $_.PSObject.Properties['Category'] })
+    Assert ($all.Count -eq 1) '-IncludeAllFolders did not find the duplicate'
+}
+
+Test 'cleanup: flags a zip only when every file in it is already unzipped' {
+    param($r)
+    New-OldFile "$r\project\a.txt" 'a'; New-OldFile "$r\project\sub\b.txt" 'b'
+    New-Item -ItemType Directory "$r\Archives" | Out-Null
+    Compress-Archive -Path "$r\project\*" -DestinationPath "$r\Archives\project.zip"
+    New-OldFile "$r\_src\c.txt" 'c'; New-OldFile "$r\_src\d.txt" 'd'
+    Compress-Archive -Path "$r\_src\*" -DestinationPath "$r\Archives\partial.zip"
+    New-OldFile "$r\partial\c.txt" 'c'   # d.txt missing -> not fully unzipped
+    $items = @(Find-Items $r | Where-Object Category -eq 'Extracted archive')
+    Assert ($items.Count -eq 1) "expected 1 archive, got $($items.Count)"
+    Assert ($items[0].Path -like '*project.zip') 'fully unzipped archive not flagged'
+}
+
+Test 'cleanup: flags installers for installed apps, but not newer versions or unknown apps' {
+    param($r)
+    New-OldFile "$r\Installers\ExampleApp-Setup-1.5.0.exe" 'v1.5'
+    New-OldFile "$r\Installers\ExampleApp-Setup-2.0.0.exe" 'v2.0'
+    New-OldFile "$r\Installers\ExampleApp-Setup-3.0.0.exe" 'v3.0'
+    New-OldFile "$r\Installers\OtherThing-setup.exe" 'other'
+    $apps = @([pscustomobject]@{ Name = 'Example App'; Version = '2.0.0' })
+    $names = @(Find-Items $r $apps | Where-Object Category -eq 'Installer' | ForEach-Object { Split-Path $_.Path -Leaf } | Sort-Object)
+    Assert (($names -join ',') -eq 'ExampleApp-Setup-1.5.0.exe,ExampleApp-Setup-2.0.0.exe') "flagged: $($names -join ', ')"
+}
+
+Test 'cleanup: Remove-Reclaimable re-checks files and skips anything that changed' {
+    param($r)
+    New-OldFile "$r\Documents\PDFs\a.pdf" 'pair A'; New-OldFile "$r\Documents\PDFs\a-copy.pdf" 'pair A'
+    New-OldFile "$r\Images\b.png" 'pair B';         New-OldFile "$r\Images\b-copy.png" 'pair B'
+    $reports = "$r\_logs\reports"
+    & $finder -Path $r -ReportDir $reports -InstalledPrograms $noApps | Out-Null
+    Assert ([bool](Get-ChildItem $reports -Filter '*.html')) 'no HTML report written'
+    Remove-Item "$r\Documents\PDFs\a.pdf"     # the copy being kept for pair A disappears
+    $planned = @(& $remover -ReportDir $reports -ListOnly -WarningAction SilentlyContinue | Where-Object { $_.PSObject.Properties['Path'] })
+    Assert ($planned.Count -eq 1) "expected 1 file planned, got $($planned.Count)"
+    Assert ($planned[0].Path -like '*Images\b-copy.png') 'planned the wrong file'
+    Assert (Test-Path "$r\Documents\PDFs\a-copy.pdf") 'ListOnly changed something'
+}
+
+Test 'weekly run with -CleanupReport sorts first, then writes a report' {
+    param($r)
+    New-OldFile "$r\Documents\PDFs\a.pdf" 'same'
+    New-OldFile "$r\a.pdf" 'same'
+    Invoke-Sort $r @{ CleanupReport = $true; ReportDir = "$r\_logs\reports" }
+    Assert ([bool](Get-ChildItem "$r\_logs\reports" -Filter '*.html')) 'no report written'
 }
 
 Write-Host ''

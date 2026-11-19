@@ -19,6 +19,8 @@ param(
     [string]$TaskName = 'SundaySort - weekly Downloads cleanup',
     # Don't show a notification after each weekly run.
     [switch]$NoNotify,
+    # Don't look for old installers, unzipped archives and duplicates each week.
+    [switch]$NoCleanupReport,
     [switch]$SkipPreview
 )
 $ErrorActionPreference = 'Stop'
@@ -27,7 +29,7 @@ $at = [datetime]::Parse($Time)
 
 # 1) Copy the scripts
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Uninstall.ps1') {
+foreach ($f in 'Sort-Downloads.ps1', 'Undo-LastSort.ps1', 'Find-Reclaimable.ps1', 'Remove-Reclaimable.ps1', 'Uninstall.ps1') {
     Copy-Item -LiteralPath (Join-Path $here $f) -Destination $InstallDir -Force
 }
 Get-ChildItem -LiteralPath $InstallDir -Filter '*.ps1' | Unblock-File
@@ -49,6 +51,8 @@ if (-not $SkipPreview) {
     if ($RulesFile) { $previewArgs.RulesFile = $rulesTarget }
     & $sorter @previewArgs
 }
+
+if (-not $NoCleanupReport) { $sortArgs += ' -CleanupReport' }
 
 # 3) Notifications: the "Undo" button opens sundaysort:undo, registered for this user only
 if (-not $NoNotify) {
@@ -75,4 +79,5 @@ Write-Output "Installed to $InstallDir"
 Write-Output "Scheduled every $Day at $($at.ToString('h:mm tt')). Next run: $next"
 Write-Output "Sort now:  & `"$sorter`""
 Write-Output "Undo:      & `"$(Join-Path $InstallDir 'Undo-LastSort.ps1')`""
+Write-Output "Cleanup:   & `"$(Join-Path $InstallDir 'Find-Reclaimable.ps1')`""
 Write-Output "Remove:    & `"$(Join-Path $InstallDir 'Uninstall.ps1')`""
